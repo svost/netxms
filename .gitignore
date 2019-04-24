@@ -290,3 +290,5 @@ src/libnxjava/java/base/netxms-base/.settings/
 *.iml
 .idea/*
 .autoenv.zsh
+CMakeLists.txt
+cmake-build-debug/

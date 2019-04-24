@@ -53,14 +53,14 @@ public class GrafanaDataCollection extends AbstractHandler
          getSession().syncObjects();
 
       objects = getSession().getAllObjects();
-      
+      log.debug(query.toString());
       if (query.containsKey("targets"))
       {
          return getGraphData(query);
       }
       else if (query.containsKey("target"))
       {
-         return getDciList(query.get("target"));
+         return getDciList(query);
       }
       
       return getNodeList();     
@@ -144,23 +144,31 @@ public class GrafanaDataCollection extends AbstractHandler
    /**
     * Get list of dci`s for a node
     * 
-    * @param id
+    * @param query
     * @return dci list
     */
-   private Map<Long, String> getDciList(String id) throws Exception
+   private Map<Long, DciValue[]> getDciList(Map<String, String> query) throws Exception
    {
-      Map<Long, String> result = new HashMap<Long, String>();
-      try
+      Map<Long, DciValue[]> result = new HashMap<Long, DciValue[]>();
+      JsonParser parser = new JsonParser();
+      JsonElement element = parser.parse(query.get("target"));
+
+      if (!element.isJsonArray())
+         return result;
+
+      JsonArray targets = element.getAsJsonArray();
+      for(JsonElement t : targets)
       {
-         DciValue[] values = getSession().getLastValues(Long.parseLong(id));
-         for(DciValue v : values)
+         try
          {
-            result.put(v.getId(), v.getDescription());
+            Long id = t.getAsJsonObject().get("id").getAsLong();
+            DciValue[] values = getSession().getLastValues(id);
+            result.put(id, values);
          }
-      }
-      catch (NXCException e)
-      {
-         log.debug("DCI not found");
+         catch (NXCException e)
+         {
+            log.debug("DCI not found");
+         }
       }
 
       return result;
