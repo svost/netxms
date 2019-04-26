@@ -18,6 +18,7 @@
  */
 package org.netxms.websvc.handlers;
 
+import java.io.IOException;
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -53,7 +54,6 @@ public class GrafanaDataCollection extends AbstractHandler
          getSession().syncObjects();
 
       objects = getSession().getAllObjects();
-      log.debug(query.toString());
       if (query.containsKey("targets"))
       {
          return getGraphData(query);
@@ -85,44 +85,74 @@ public class GrafanaDataCollection extends AbstractHandler
       DateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX");
       Date from = format.parse(query.get("from").substring(1, query.get("from").length()-1));
       Date to = format.parse(query.get("to").substring(1, query.get("to").length()-1));
-      
-      JsonObject root, dciTarget, dci;
+
       JsonArray result = new JsonArray();
       for(JsonElement e : targets)
       {
          if (!e.getAsJsonObject().has("dciTarget") || !e.getAsJsonObject().has("dci"))
             continue;
-         
-         dciTarget = e.getAsJsonObject().getAsJsonObject("dciTarget");
-         dci = e.getAsJsonObject().getAsJsonObject("dci");
-         
-         if (dciTarget.size() == 0 || dci.size() == 0)
-            continue;
-         
-         DciData data = getSession().getCollectedData(Long.parseLong(dciTarget.get("id").getAsString()),
-                                                      Long.parseLong(dci.get("id").getAsString()), from, to, 0, HistoricalDataType.PROCESSED);
-         root = new JsonObject();
-         JsonArray datapoints = new JsonArray();
-         JsonArray datapoint;
-         DciDataRow[] values = data.getValues(); 
-         for(int i = values.length - 1; i >= 0; i--)
+
+         JsonObject dciTarget = e.getAsJsonObject().getAsJsonObject("dciTarget");
+         JsonObject dci = e.getAsJsonObject().getAsJsonObject("dci");
+         String dciTargetName = dciTarget.get("name").getAsString();
+         String dciName = dci.has("name") ? dci.get("name").getAsString() : "";
+
+         if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
          {
-            DciDataRow r = values[i];
-				log.debug(r.toString());
-				datapoint = new JsonArray();
-            datapoint.add(r.getValueAsDouble());
-            datapoint.add(r.getTimestamp().getTime());
-            datapoints.add(datapoint);
+            String targetRegex = dciTargetName.substring(1, dciTargetName.length() - 1);
+            String dciRegex = dciName.isEmpty() ? ".*" : dciName.substring(1, dciName.length() - 1);
+
+            Map<Long, List<DciValue>> values = getSession().resolveLastValues(targetRegex, dciRegex);
+            for(Map.Entry<Long, List<DciValue>> entry : values.entrySet())
+            {
+               for(DciValue v : entry.getValue())
+               {
+                  result.add(fillGraphData(entry.getKey(), v.getId(), v.getDescription(), from, to));
+               }
+            }
          }
-         if (e.getAsJsonObject().has("legend") && !e.getAsJsonObject().get("legend").getAsString().equals(""))
-            root.addProperty("target", e.getAsJsonObject().get("legend").getAsString());
          else
-            root.addProperty("target", dci.get("name").getAsString());
-         
-         root.add("datapoints", datapoints);
-         result.add(root);
+         {
+            String legend = (e.getAsJsonObject().has("legend") && !e.getAsJsonObject().get("legend").getAsString().isEmpty()) ?
+                           e.getAsJsonObject().get("legend").getAsString() : dciName;
+            result.add(fillGraphData(Long.parseLong(dciTarget.get("id").getAsString()), Long.parseLong(dci.get("id").getAsString()), legend, from, to));
+         }
       }
       return result;
+   }
+
+   /**
+    * Fill graph data
+    *
+    * @param objectId
+    * @param dciId
+    * @param legend
+    * @param from
+    * @param to
+    * @return
+    * @throws IOException
+    * @throws NXCException
+    */
+   private JsonObject fillGraphData(Long objectId, Long dciId, String legend, Date from, Date to) throws IOException, NXCException
+   {
+      DciData data = getSession().getCollectedData(objectId, dciId, from, to, 0, HistoricalDataType.PROCESSED);
+
+      JsonObject root = new JsonObject();
+      JsonArray datapoints = new JsonArray();
+      DciDataRow[] values = data.getValues();
+      for(int i = values.length - 1; i >= 0; i--)
+      {
+         DciDataRow r = values[i];
+         JsonArray datapoint = new JsonArray();
+         datapoint.add(r.getValueAsDouble());
+         datapoint.add(r.getTimestamp().getTime());
+         datapoints.add(datapoint);
+      }
+
+      root.addProperty("target", legend);
+      root.add("datapoints", datapoints);
+
+      return root;
    }
    
    /**

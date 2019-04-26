@@ -135,6 +135,7 @@ import org.netxms.client.objects.Container;
 import org.netxms.client.objects.Dashboard;
 import org.netxms.client.objects.DashboardGroup;
 import org.netxms.client.objects.DashboardRoot;
+import org.netxms.client.objects.DataCollectionTarget;
 import org.netxms.client.objects.DependentNode;
 import org.netxms.client.objects.EntireNetwork;
 import org.netxms.client.objects.GenericObject;
@@ -4162,6 +4163,47 @@ public class NXCSession
       sendMessage(msg);
       final NXCPMessage response = waitForRCC(msg.getMessageId());
       return response.getFieldAsString(NXCPCodes.VID_VALUE);
+   }
+   
+   /**
+    * Resolve list of last values by regex
+    * 
+    * @param objectName as regex
+    * @param dciName as regex
+    * @return map of all resolved last values
+    * @throws IOException  if socket I/O error occurs
+    * @throws NXCException if NetXMS server returns an error or operation was timed out
+    */
+   public Map<Long, List<DciValue>> resolveLastValues(String objectName, String dciName) throws IOException, NXCException
+   {
+      List<AbstractObject> objects = getAllObjects();
+      Iterator<AbstractObject> objectIterator = objects.iterator();
+      
+      while(objectIterator.hasNext())
+      {
+         AbstractObject o = objectIterator.next();
+         if (!(o instanceof DataCollectionTarget) || !o.getObjectName().matches(objectName))
+            objectIterator.remove();
+      }
+      
+      Map<Long, List<DciValue>> result = new HashMap<Long, List<DciValue>>();
+      
+      for(AbstractObject o : objects)
+      {
+         List<DciValue> values = new ArrayList<>(Arrays.asList(getLastValues(o.getObjectId())));
+         Iterator<DciValue> valueIterator = values.iterator();
+         
+         while(valueIterator.hasNext())
+         {
+            DciValue v = valueIterator.next();
+            if (!v.getName().matches(dciName))
+               valueIterator.remove();
+         }
+
+         result.put(o.getObjectId(), values);
+      }
+      
+      return result;
    }
 
    /**
