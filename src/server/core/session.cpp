@@ -1338,6 +1338,8 @@ void ClientSession::processRequest(NXCPMessage *request)
       case CMD_POLICY_FORCE_APPLY:
          forcApplyPolicy(request);
          break;
+      case CMD_GET_MATCHING_DCI:
+         getMatchingDCI(request);
 #ifdef WITH_ZMQ
       case CMD_ZMQ_SUBSCRIBE_EVENT:
          zmqManageSubscription(request, zmq::EVENT, true);
@@ -14590,6 +14592,78 @@ void ClientSession::forcApplyPolicy(NXCPMessage *pRequest)
 
    // Send response
    sendMessage(&msg);
+}
+
+/**
+ * Get a list of dci's matched by regex
+ * @param request
+ */
+void ClientSession::getMatchingDCI(NXCPMessage *request)
+{
+   NXCPMessage msg;
+   msg.setCode(CMD_REQUEST_COMPLETED);
+   msg.setId(request->getId());
+
+   TCHAR objectName[MAX_OBJECT_NAME], dciName[MAX_OBJECT_NAME];
+   objectName[0] = 0
+   UINT32 objectId = 0;
+   ObjectArray<DCObject> *dcoList;
+   IntegerArray<UINT32> *dcoIds;
+   HashMap<UINT32, IntegerArray<UINT32>> result(true);
+
+   if (request->isFieldExist(VID_OBJECT_NAME))
+      request->getFieldAsString(VID_OBJECT_NAME, objectName, MAX_OBJECT_NAME);
+   else
+      objectId = request->getFieldAsUInt32(VID_OBJECT_ID);
+   UINT32 flags = request->getFieldAsInt32(VID_FLAGS);
+
+   if (objectId != 0)
+   {
+      Node *node = static_cast<Node *>(FindObjectById(objectId, OBJECT_NODE));
+      if (node != NULL && node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
+      {
+         dcoIds = new IntegerArray<UINT32>();
+         dcoList = node->getDCObjectsByRegex(dciName, true);
+         for(int i = 0; i < dcoList->size(); i++)
+         {
+            DCObject *dco = dcoList->get(i);
+            if (dco->hasAccess(m_dwUserId))
+               dcoIds->add(dco->getId());
+         }
+         msg.setFieldFromInt32Array(VID_DCI_LIST, dcoIds);
+         msg.setField(VID_OBJECT_ID, objectId);
+         delete(dcoList);
+      }
+   }
+   else if (objectName != 0)
+   {
+      ObjectArray<NetObj> *objects = FindObjectsByRegex(objectName, OBJECT_NODE);
+      UINT32 dcoIdBase = VID_DCI_LIST_BASE, objectIdBase = VID_OBJECT_LIST;
+      for(int i = 0; i < objects->size(); i++)
+      {
+         Node *node = static_cast<Node *>(objects->get(i));
+         if (node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
+         {
+            dcoList = node->getDCObjectsByRegex(dciName, true);
+            for(int n = 0; n < dcoList->size(); n++)
+            {
+               DCObject *dco = dcoList->get(n);
+               if (dco->hasAccess(m_dwUserId))
+                  dcoIds->add(dco->getId());
+            }
+            msg.setField(objectIdBase++, node->getId());
+            msg.setFieldFromInt32Array(dcoIdBase++, dcoIds);
+            delete(dcoList);
+         }
+      }
+      msg.setField(VID_NUM_ITEMS, objects->size());
+      delete(objects);
+   }
+   else
+      msg.setField(VID_RCC, RCC_INVALID_ARGUMENT);
+
+   sendMessage(&msg);
+   delete(dcoIds); // TODO
 }
 
 #ifdef WITH_ZMQ

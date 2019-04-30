@@ -1055,3 +1055,30 @@ bool DataCollectionOwner::isDataCollectionSource(UINT32 nodeId)
    unlockDciAccess();
    return result;
 }
+
+/**
+ * Find DCObject by regex
+ *
+ * @param regex
+ * @param searchName set to true if search by DCO name required
+ * @return list of matching DCOs
+ */
+ObjectArray<DCObject> *DataCollectionOwner::getDCObjectsByRegex(const TCHAR *regex, bool searchName) const
+{
+   ObjectArray<DCObject> *result = new ObjectArray<DCObject>();
+
+   for(int i = 0; i < m_dcObjects->size(); i++)
+   {
+      DCObject *o = m_dcObjects->get(i);
+      if (searchName && RegexpMatch(o->getName(), regex, true))
+      {
+         result->add(o);
+      }
+      else if (RegexpMatch(o->getDescription(), regex, true))
+      {
+         result->add(o);
+      }
+   }
+
+   return result;
+}

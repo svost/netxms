@@ -65,6 +65,7 @@ import org.netxms.base.NXCPCodes;
 import org.netxms.base.NXCPDataInputStream;
 import org.netxms.base.NXCPException;
 import org.netxms.base.NXCPMessage;
+import org.netxms.base.NXCPMessageField;
 import org.netxms.base.NXCPMessageReceiver;
 import org.netxms.base.NXCPMsgWaitQueue;
 import org.netxms.base.NXCommon;
@@ -2763,6 +2764,27 @@ public class NXCSession
          syncObjectSet(syncList, syncComments, options);
       }
    }
+   
+   /**
+    * Find object by regex
+    * 
+    * @param regex for object name
+    * @return list of matching objects
+    */
+   public List<AbstractObject> findObjectByRegex(String regex)
+   {
+      List<AbstractObject> objects = getAllObjects();
+      Iterator<AbstractObject> objectIterator = objects.iterator();
+      
+      while(objectIterator.hasNext())
+      {
+         AbstractObject o = objectIterator.next();
+         if (!o.getObjectName().matches(regex))
+            objectIterator.remove();
+      }
+      
+      return objects;
+   }   
 
    /**
     * Find NetXMS object by it's identifier.
@@ -4168,39 +4190,45 @@ public class NXCSession
    /**
     * Resolve list of last values by regex
     * 
+    * @param objectId if specific object needed
     * @param objectName as regex
     * @param dciName as regex
+    * @param flags
     * @return map of all resolved last values
     * @throws IOException  if socket I/O error occurs
     * @throws NXCException if NetXMS server returns an error or operation was timed out
     */
-   public Map<Long, List<DciValue>> resolveLastValues(String objectName, String dciName) throws IOException, NXCException
+   public Map<Long, List<Long>> findMatchingDCI(long objectId, String objectName, String dciName, int flags) throws IOException, NXCException
    {
-      List<AbstractObject> objects = getAllObjects();
-      Iterator<AbstractObject> objectIterator = objects.iterator();
+      final NXCPMessage msg = newMessage(NXCPCodes.CMD_GET_MATCHING_DCI);
       
-      while(objectIterator.hasNext())
+      if (objectName != null)
+         msg.setField(NXCPCodes.VID_OBJECT_NAME, objectName);
+      else
+         msg.setFieldInt32(NXCPCodes.VID_OBJECT_ID, (int)objectId);
+      msg.setField(NXCPCodes.VID_DCI_NAME, dciName);
+      msg.setFieldInt32(NXCPCodes.VID_FLAGS, flags);
+      sendMessage(msg);
+      
+      final NXCPMessage response = waitForRCC(msg.getMessageId());
+      
+      Map<Long, List<Long>> result = new HashMap<Long, List<Long>>();
+      
+      if (objectName != null)
       {
-         AbstractObject o = objectIterator.next();
-         if (!(o instanceof DataCollectionTarget) || !o.getObjectName().matches(objectName))
-            objectIterator.remove();
-      }
-      
-      Map<Long, List<DciValue>> result = new HashMap<Long, List<DciValue>>();
-      
-      for(AbstractObject o : objects)
-      {
-         List<DciValue> values = new ArrayList<>(Arrays.asList(getLastValues(o.getObjectId())));
-         Iterator<DciValue> valueIterator = values.iterator();
+         long dcoIdBase = NXCPCodes.VID_DCI_LIST_BASE, objectIdBase = NXCPCodes.VID_OBJECT_LIST;
+         int numItems = response.getFieldAsInt32(NXCPCodes.VID_NUM_ITEMS);
          
-         while(valueIterator.hasNext())
+         for(int i = 0; i < numItems; i++)
          {
-            DciValue v = valueIterator.next();
-            if (!v.getName().matches(dciName))
-               valueIterator.remove();
+            List<Long> dcoIds = Arrays.asList(response.getFieldAsUInt32ArrayEx(dcoIdBase++));
+            result.put(Long.valueOf(response.getFieldAsInt32(objectIdBase++)), dcoIds);
          }
-
-         result.put(o.getObjectId(), values);
+      }
+      else if (objectId != 0)
+      {
+         List<Long> dcoIds = Arrays.asList(response.getFieldAsUInt32ArrayEx(NXCPCodes.VID_DCI_LIST));
+         result.put(Long.valueOf(response.getFieldAsInt32(NXCPCodes.VID_OBJECT_ID)), dcoIds);
       }
       
       return result;

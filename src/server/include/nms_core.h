@@ -782,6 +782,7 @@ private:
    void getPolicyList(NXCPMessage *request);
    void onPolicyEditorClose(NXCPMessage *request);
    void forcApplyPolicy(NXCPMessage *pRequest);
+   void getMatchingDCI(NXCPMessage *request);
 #ifdef WITH_ZMQ
    void zmqManageSubscription(NXCPMessage *request, zmq::SubscriptionType type, bool subscribe);
    void zmqListSubscriptions(NXCPMessage *request, zmq::SubscriptionType type);

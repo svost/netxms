@@ -1016,6 +1016,55 @@ NetObj NXCORE_EXPORTABLE *FindObjectById(UINT32 dwId, int objClass)
 }
 
 /**
+ * Find objects with name matching the regex
+ *
+ * @param regex for matching object name
+ * @param objClass
+ * @return
+ */
+ObjectArray<NetObj> NXCORE_EXPORTABLE *FindObjectsByRegex(const TCHAR *regex, int objClass)
+{
+   ObjectIndex *index;
+   switch(objClass)
+   {
+      case OBJECT_ACCESSPOINT:
+         index = &g_idxAccessPointById;
+         break;
+      case OBJECT_CLUSTER:
+         index = &g_idxClusterById;
+         break;
+      case OBJECT_MOBILEDEVICE:
+         index = &g_idxMobileDeviceById;
+         break;
+      case OBJECT_NODE:
+         index = &g_idxNodeById;
+         break;
+      case OBJECT_SENSOR:
+         index = &g_idxSensorById;
+         break;
+      case OBJECT_SUBNET:
+         index = &g_idxSubnetById;
+         break;
+      default:
+         index = &g_idxObjectById;
+         break;
+   }
+
+   ObjectArray<NetObj> *objects = index->getObjects(true);
+   for(int i = 0; i < objects->size(); i++)
+   {
+      NetObj *o = objects->get(i);
+      if (o->getObjectClass() != objClass && !RegexpMatch(o->getName(), regex, true)) // TODO comp
+      {
+         objects->remove(i);
+         i--;
+      }
+   }
+
+   return objects;
+}
+
+/**
  * Get object name by ID
  */
 const TCHAR NXCORE_EXPORTABLE *GetObjectName(DWORD id, const TCHAR *defaultName)
