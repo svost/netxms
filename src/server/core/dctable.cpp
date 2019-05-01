@@ -845,8 +845,8 @@ void DCTable::fillLastValueSummaryMessage(NXCPMessage *pMsg, UINT32 dwId)
 	pMsg->setField(dwId++, (WORD)getType());
 	pMsg->setField(dwId++, m_dwErrorCount);
 	pMsg->setField(dwId++, m_dwTemplateItemId);
+   pMsg->setField(dwId++, m_owner->getId());
    pMsg->setField(dwId++, (WORD)0);            // compatibility: number of thresholds
-   pMsg->setField(dwId++, m_sourceNode);
 
 	unlock();
 }

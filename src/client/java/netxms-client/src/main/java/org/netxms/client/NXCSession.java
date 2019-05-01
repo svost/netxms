@@ -4203,10 +4203,10 @@ public class NXCSession
    {
       final NXCPMessage msg = newMessage(NXCPCodes.CMD_GET_MATCHING_DCI);
       
-      if (objectId == 0)
-         msg.setField(NXCPCodes.VID_OBJECT_NAME, objectName);
-      else
+      if (objectId != 0)
          msg.setFieldInt32(NXCPCodes.VID_OBJECT_ID, (int)objectId);
+      else
+         msg.setField(NXCPCodes.VID_OBJECT_NAME, objectName);
       msg.setField(NXCPCodes.VID_DCI_NAME, dciName);
       msg.setFieldInt32(NXCPCodes.VID_FLAGS, flags);
       sendMessage(msg);

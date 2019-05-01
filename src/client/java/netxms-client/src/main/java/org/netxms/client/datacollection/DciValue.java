@@ -95,11 +95,11 @@ public abstract class DciValue
 		dcObjectType = msg.getFieldAsInt32(fieldId++);
 		errorCount = msg.getFieldAsInt32(fieldId++);
 		templateDciId = msg.getFieldAsInt64(fieldId++);
+      this.nodeId = msg.getFieldAsInt32(fieldId++);
 		if (msg.getFieldAsBoolean(fieldId++))
-			activeThreshold = new Threshold(msg, fieldId++);
+			activeThreshold = new Threshold(msg, fieldId);
 		else
 			activeThreshold = null;
-		this.nodeId = msg.getFieldAsInt32(fieldId);
 		
 	}
 	

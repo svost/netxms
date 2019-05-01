@@ -1059,7 +1059,7 @@ ObjectArray<NetObj> NXCORE_EXPORTABLE *FindObjectsByRegex(const TCHAR *regex, in
    for(int i = 0; i < objects->size(); i++)
    {
       NetObj *o = objects->get(i);
-      if (o->getObjectClass() != objClass && _tregexec(&preg, o->getName(), 0, NULL, 0) != 0)
+      if (_tregexec(&preg, o->getName(), 0, NULL, 0) != 0)
       {
          objects->remove(i);
          i--;

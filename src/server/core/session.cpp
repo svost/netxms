@@ -14605,13 +14605,13 @@ void ClientSession::forcApplyPolicy(NXCPMessage *pRequest)
  */
 ObjectArray<DCObject> *ClientSession::resolveDCOsByRegex(UINT32 objectId, const TCHAR *objectNameRegex, const TCHAR *dciRegex, bool searchByName)
 {
-   if (dciRegex == NULL)
+   if (dciRegex == NULL || dciRegex[0] == 0)
       return NULL;
 
    ObjectArray<DCObject> *dcoList = NULL;
    Node *node = NULL;
 
-   if (objectNameRegex == NULL)
+   if (objectNameRegex == NULL || objectNameRegex[0] == 0)
    {
       node = static_cast<Node *>(FindObjectById(objectId, OBJECT_NODE));
       if (node != NULL && node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))

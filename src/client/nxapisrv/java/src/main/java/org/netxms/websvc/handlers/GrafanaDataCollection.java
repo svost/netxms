@@ -100,7 +100,7 @@ public class GrafanaDataCollection extends AbstractHandler
          Long dciId = Long.parseLong(dci.get("id").getAsString());
 
          String dciName = dci.get("name").getAsString();
-         if (dciId == 0)
+         if (dciId == 0 && !dciName.isEmpty())
          {
             String dciTargetName = dciTarget.get("name").getAsString();
 
@@ -112,7 +112,7 @@ public class GrafanaDataCollection extends AbstractHandler
             {
                dciTargetName = dciTargetName.substring(1, dciTargetName.length() - 1);
             }
-            if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
+            if (dciName.startsWith("/") && dciName.endsWith("/"))
             {
                dciName = dciName.substring(1, dciName.length() - 1);
             }
