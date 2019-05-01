@@ -21,6 +21,7 @@
 **/
 
 #include "nxcore.h"
+#include <netxms-regex.h>
 
 /**
  * Data collection owner object constructor
@@ -1065,16 +1066,20 @@ bool DataCollectionOwner::isDataCollectionSource(UINT32 nodeId)
  */
 ObjectArray<DCObject> *DataCollectionOwner::getDCObjectsByRegex(const TCHAR *regex, bool searchName) const
 {
+   regex_t preg;
+   if (_tregcomp(&preg, regex, REG_EXTENDED | REG_NOSUB) != 0)
+      return NULL;
+
    ObjectArray<DCObject> *result = new ObjectArray<DCObject>();
 
    for(int i = 0; i < m_dcObjects->size(); i++)
    {
       DCObject *o = m_dcObjects->get(i);
-      if (searchName && RegexpMatch(o->getName(), regex, true))
+      if (searchName && _tregexec(&preg, o->getName(), 0, NULL, 0) == 0)
       {
          result->add(o);
       }
-      else if (RegexpMatch(o->getDescription(), regex, true))
+      else if (_tregexec(&preg, o->getDescription(), 0, NULL, 0) == 0)
       {
          result->add(o);
       }

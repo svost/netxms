@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.netxms.client.NXCException;
+import org.netxms.client.NXCSession;
 import org.netxms.client.constants.HistoricalDataType;
 import org.netxms.client.datacollection.DciData;
 import org.netxms.client.datacollection.DciDataRow;
@@ -54,7 +55,6 @@ public class GrafanaDataCollection extends AbstractHandler
          getSession().syncObjects();
 
       objects = getSession().getAllObjects();
-      log.debug(query.toString());
       if (query.containsKey("targets"))
       {
          return getGraphData(query);
@@ -90,34 +90,45 @@ public class GrafanaDataCollection extends AbstractHandler
       JsonArray result = new JsonArray();
       for(JsonElement e : targets)
       {
-         log.debug(e.toString());
          if (!e.getAsJsonObject().has("dciTarget") || !e.getAsJsonObject().has("dci"))
             continue;
 
          JsonObject dciTarget = e.getAsJsonObject().getAsJsonObject("dciTarget");
          JsonObject dci = e.getAsJsonObject().getAsJsonObject("dci");
-         String dciTargetName = dciTarget.get("name").getAsString();
-         String dciName = dci.has("name") ? dci.get("name").getAsString() : "";
 
-         if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
+         Long dciTargetId = Long.parseLong(dciTarget.get("id").getAsString());
+         Long dciId = Long.parseLong(dci.get("id").getAsString());
+
+         String dciName = dci.get("name").getAsString();
+         if (dciId == 0)
          {
-            String targetRegex = dciTargetName.substring(1, dciTargetName.length() - 1);
-            String dciRegex = dciName.isEmpty() ? dciName : dciName.substring(1, dciName.length() - 1);
+            String dciTargetName = dciTarget.get("name").getAsString();
 
-            Map<Long, List<DciValue>> values = getSession().resolveLastValues(targetRegex, dciRegex);
-            for(Map.Entry<Long, List<DciValue>> entry : values.entrySet())
+            Boolean searchByName = e.getAsJsonObject().has("searchByName") ?
+                  e.getAsJsonObject().get("searchByName").getAsBoolean() :
+                  false;
+
+            if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
             {
-               for(DciValue v : entry.getValue())
-               {
-                  result.add(fillGraphData(entry.getKey(), v.getId(), v.getDescription(), from, to));
-               }
+               dciTargetName = dciTargetName.substring(1, dciTargetName.length() - 1);
+            }
+            if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
+            {
+               dciName = dciName.substring(1, dciName.length() - 1);
+            }
+
+            List<DciValue> values = getSession()
+                  .findMatchingDCI(dciTargetId, dciTargetName, dciName, searchByName ? NXCSession.DCI_RES_SEARCH_NAME : 0);
+
+            for(DciValue v : values)
+            {
+               result.add(fillGraphData(v.getNodeId(), v.getId(), v.getDescription(), from, to));
             }
          }
          else
          {
-            String legend = (e.getAsJsonObject().has("legend") && !e.getAsJsonObject().get("legend").getAsString().isEmpty()) ?
-                           e.getAsJsonObject().get("legend").getAsString() : dciName;
-            result.add(fillGraphData(Long.parseLong(dciTarget.get("id").getAsString()), Long.parseLong(dci.get("id").getAsString()), legend, from, to));
+            String legend = e.getAsJsonObject().get("legend").getAsString().isEmpty() ? dciName : e.getAsJsonObject().get("legend").getAsString();
+            result.add(fillGraphData(dciTargetId, dciId, legend, from, to));
          }
       }
       return result;

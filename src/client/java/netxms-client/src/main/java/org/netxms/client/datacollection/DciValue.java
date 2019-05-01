@@ -83,7 +83,6 @@ public abstract class DciValue
 	{
 		long fieldId = base;
 	
-		this.nodeId = nodeId;
 		id = msg.getFieldAsInt64(fieldId++);
 		name = msg.getFieldAsString(fieldId++);
       flags = msg.getFieldAsInt32(fieldId++);
@@ -97,9 +96,10 @@ public abstract class DciValue
 		errorCount = msg.getFieldAsInt32(fieldId++);
 		templateDciId = msg.getFieldAsInt64(fieldId++);
 		if (msg.getFieldAsBoolean(fieldId++))
-			activeThreshold = new Threshold(msg, fieldId);
+			activeThreshold = new Threshold(msg, fieldId++);
 		else
 			activeThreshold = null;
+		this.nodeId = msg.getFieldAsInt32(fieldId);
 		
 	}
 	

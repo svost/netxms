@@ -14595,7 +14595,56 @@ void ClientSession::forcApplyPolicy(NXCPMessage *pRequest)
 }
 
 /**
+ * Resolve DCO's by regex
+ *
+ * @param objectId for single object
+ * @param objectNameRegex for multiple objects
+ * @param dciRegex
+ * @param searchByName
+ * @return
+ */
+ObjectArray<DCObject> *ClientSession::resolveDCOsByRegex(UINT32 objectId, const TCHAR *objectNameRegex, const TCHAR *dciRegex, bool searchByName)
+{
+   if (dciRegex == NULL)
+      return NULL;
+
+   ObjectArray<DCObject> *dcoList = NULL;
+   Node *node = NULL;
+
+   if (objectNameRegex == NULL)
+   {
+      node = static_cast<Node *>(FindObjectById(objectId, OBJECT_NODE));
+      if (node != NULL && node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
+         dcoList = node->getDCObjectsByRegex(dciRegex, searchByName);
+   }
+   else
+   {
+      ObjectArray<NetObj> *objects = FindObjectsByRegex(objectNameRegex, OBJECT_NODE);
+      if (objects != NULL)
+      {
+         dcoList = new ObjectArray<DCObject>();
+         for(int i = 0; i < objects->size(); i++)
+         {
+            node = static_cast<Node *>(objects->get(i));
+            ObjectArray<DCObject> *nodeDcoList = node->getDCObjectsByRegex(dciRegex, searchByName);
+            if (nodeDcoList != NULL)
+            {
+               for(int n = 0; n < nodeDcoList->size(); n++)
+               {
+                  dcoList->add(nodeDcoList->get(n));
+               }
+               delete(nodeDcoList);
+            }
+         }
+      }
+   }
+
+   return dcoList;
+}
+
+/**
  * Get a list of dci's matched by regex
+ *
  * @param request
  */
 void ClientSession::getMatchingDCI(NXCPMessage *request)
@@ -14605,65 +14654,37 @@ void ClientSession::getMatchingDCI(NXCPMessage *request)
    msg.setId(request->getId());
 
    TCHAR objectName[MAX_OBJECT_NAME], dciName[MAX_OBJECT_NAME];
-   objectName[0] = 0
+   objectName[0] = 0, dciName[0] = 0;
    UINT32 objectId = 0;
-   ObjectArray<DCObject> *dcoList;
-   IntegerArray<UINT32> *dcoIds;
-   HashMap<UINT32, IntegerArray<UINT32>> result(true);
 
    if (request->isFieldExist(VID_OBJECT_NAME))
       request->getFieldAsString(VID_OBJECT_NAME, objectName, MAX_OBJECT_NAME);
    else
       objectId = request->getFieldAsUInt32(VID_OBJECT_ID);
    UINT32 flags = request->getFieldAsInt32(VID_FLAGS);
+   request->getFieldAsString(VID_DCI_NAME, dciName, MAX_OBJECT_NAME);
 
-   if (objectId != 0)
+   ObjectArray<DCObject> *dcoList = resolveDCOsByRegex(objectId, objectName, dciName, (flags & DCI_RES_SEARCH_NAME));
+   if (dcoList != NULL)
    {
-      Node *node = static_cast<Node *>(FindObjectById(objectId, OBJECT_NODE));
-      if (node != NULL && node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
+      UINT32 dciBase = VID_DCI_VALUES_BASE, count = 0;
+      for(int i = 0; i < dcoList->size(); i++)
       {
-         dcoIds = new IntegerArray<UINT32>();
-         dcoList = node->getDCObjectsByRegex(dciName, true);
-         for(int i = 0; i < dcoList->size(); i++)
+         DCObject *o = dcoList->get(i);
+         if (o->getType() == DCO_TYPE_ITEM && o->hasAccess(m_dwUserId))
          {
-            DCObject *dco = dcoList->get(i);
-            if (dco->hasAccess(m_dwUserId))
-               dcoIds->add(dco->getId());
-         }
-         msg.setFieldFromInt32Array(VID_DCI_LIST, dcoIds);
-         msg.setField(VID_OBJECT_ID, objectId);
-         delete(dcoList);
-      }
-   }
-   else if (objectName != 0)
-   {
-      ObjectArray<NetObj> *objects = FindObjectsByRegex(objectName, OBJECT_NODE);
-      UINT32 dcoIdBase = VID_DCI_LIST_BASE, objectIdBase = VID_OBJECT_LIST;
-      for(int i = 0; i < objects->size(); i++)
-      {
-         Node *node = static_cast<Node *>(objects->get(i));
-         if (node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
-         {
-            dcoList = node->getDCObjectsByRegex(dciName, true);
-            for(int n = 0; n < dcoList->size(); n++)
-            {
-               DCObject *dco = dcoList->get(n);
-               if (dco->hasAccess(m_dwUserId))
-                  dcoIds->add(dco->getId());
-            }
-            msg.setField(objectIdBase++, node->getId());
-            msg.setFieldFromInt32Array(dcoIdBase++, dcoIds);
-            delete(dcoList);
+            static_cast<DCItem *>(o)->fillLastValueMessage(&msg, dciBase);
+            dciBase += 50;
+            count++;
          }
       }
-      msg.setField(VID_NUM_ITEMS, objects->size());
-      delete(objects);
+      msg.setField(VID_NUM_ITEMS, count);
+      delete(dcoList);
    }
    else
       msg.setField(VID_RCC, RCC_INVALID_ARGUMENT);
 
    sendMessage(&msg);
-   delete(dcoIds); // TODO
 }
 
 #ifdef WITH_ZMQ

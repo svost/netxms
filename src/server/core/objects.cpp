@@ -21,6 +21,7 @@
 **/
 
 #include "nxcore.h"
+#include <netxms-regex.h>
 
 /**
  * Global data
@@ -1024,6 +1025,10 @@ NetObj NXCORE_EXPORTABLE *FindObjectById(UINT32 dwId, int objClass)
  */
 ObjectArray<NetObj> NXCORE_EXPORTABLE *FindObjectsByRegex(const TCHAR *regex, int objClass)
 {
+   regex_t preg;
+   if (_tregcomp(&preg, regex, REG_EXTENDED | REG_NOSUB) != 0)
+      return NULL;
+
    ObjectIndex *index;
    switch(objClass)
    {
@@ -1054,7 +1059,7 @@ ObjectArray<NetObj> NXCORE_EXPORTABLE *FindObjectsByRegex(const TCHAR *regex, in
    for(int i = 0; i < objects->size(); i++)
    {
       NetObj *o = objects->get(i);
-      if (o->getObjectClass() != objClass && !RegexpMatch(o->getName(), regex, true)) // TODO comp
+      if (o->getObjectClass() != objClass && _tregexec(&preg, o->getName(), 0, NULL, 0) != 0)
       {
          objects->remove(i);
          i--;

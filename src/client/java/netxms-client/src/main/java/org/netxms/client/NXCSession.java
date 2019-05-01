@@ -65,7 +65,6 @@ import org.netxms.base.NXCPCodes;
 import org.netxms.base.NXCPDataInputStream;
 import org.netxms.base.NXCPException;
 import org.netxms.base.NXCPMessage;
-import org.netxms.base.NXCPMessageField;
 import org.netxms.base.NXCPMessageReceiver;
 import org.netxms.base.NXCPMsgWaitQueue;
 import org.netxms.base.NXCommon;
@@ -136,7 +135,6 @@ import org.netxms.client.objects.Container;
 import org.netxms.client.objects.Dashboard;
 import org.netxms.client.objects.DashboardGroup;
 import org.netxms.client.objects.DashboardRoot;
-import org.netxms.client.objects.DataCollectionTarget;
 import org.netxms.client.objects.DependentNode;
 import org.netxms.client.objects.EntireNetwork;
 import org.netxms.client.objects.GenericObject;
@@ -202,6 +200,9 @@ import com.jcraft.jzlib.JZlib;
  */
 public class NXCSession
 {
+   // DCI resolve flags
+   public static final int DCI_RES_SEARCH_NAME = 0x01;
+   
    // Various public constants
    public static final int DEFAULT_CONN_PORT = 4701;
 
@@ -4194,15 +4195,15 @@ public class NXCSession
     * @param objectName as regex
     * @param dciName as regex
     * @param flags
-    * @return map of all resolved last values
+    * @return list of all resolved last values
     * @throws IOException  if socket I/O error occurs
     * @throws NXCException if NetXMS server returns an error or operation was timed out
     */
-   public Map<Long, List<Long>> findMatchingDCI(long objectId, String objectName, String dciName, int flags) throws IOException, NXCException
+   public List<DciValue> findMatchingDCI(long objectId, String objectName, String dciName, int flags) throws IOException, NXCException
    {
       final NXCPMessage msg = newMessage(NXCPCodes.CMD_GET_MATCHING_DCI);
       
-      if (objectName != null)
+      if (objectId == 0)
          msg.setField(NXCPCodes.VID_OBJECT_NAME, objectName);
       else
          msg.setFieldInt32(NXCPCodes.VID_OBJECT_ID, (int)objectId);
@@ -4212,23 +4213,13 @@ public class NXCSession
       
       final NXCPMessage response = waitForRCC(msg.getMessageId());
       
-      Map<Long, List<Long>> result = new HashMap<Long, List<Long>>();
+      int count = response.getFieldAsInt32(NXCPCodes.VID_NUM_ITEMS);
+      List<DciValue> result = new ArrayList<DciValue>(count);
       
-      if (objectName != null)
+      Long base = NXCPCodes.VID_DCI_VALUES_BASE;
+      for(int i = 0; i < count; i++, base += 50)
       {
-         long dcoIdBase = NXCPCodes.VID_DCI_LIST_BASE, objectIdBase = NXCPCodes.VID_OBJECT_LIST;
-         int numItems = response.getFieldAsInt32(NXCPCodes.VID_NUM_ITEMS);
-         
-         for(int i = 0; i < numItems; i++)
-         {
-            List<Long> dcoIds = Arrays.asList(response.getFieldAsUInt32ArrayEx(dcoIdBase++));
-            result.put(Long.valueOf(response.getFieldAsInt32(objectIdBase++)), dcoIds);
-         }
-      }
-      else if (objectId != 0)
-      {
-         List<Long> dcoIds = Arrays.asList(response.getFieldAsUInt32ArrayEx(NXCPCodes.VID_DCI_LIST));
-         result.put(Long.valueOf(response.getFieldAsInt32(NXCPCodes.VID_OBJECT_ID)), dcoIds);
+         result.add(DciValue.createFromMessage(0, response, base));
       }
       
       return result;

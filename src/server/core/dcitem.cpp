@@ -1371,6 +1371,7 @@ void DCItem::fillLastValueMessage(NXCPMessage *pMsg, UINT32 dwId)
 	{
       pMsg->setField(dwId++, (WORD)0);
 	}
+	pMsg->setField(dwId++, m_sourceNode);
 
 	unlock();
 }
