@@ -995,7 +995,7 @@ public:
    DCObject *getDCObjectByTemplateId(UINT32 tmplItemId, UINT32 userId);
    DCObject *getDCObjectByName(const TCHAR *name, UINT32 userId);
    DCObject *getDCObjectByDescription(const TCHAR *description, UINT32 userId);
-   ObjectArray<DCObject> *getDCObjectsByRegex(const TCHAR *regex, bool searchName) const;
+   ObjectArray<DCObject> *getDCObjectsByRegex(const TCHAR *regex, bool searchName, UINT32 userId) const;
    NXSL_Value *getAllDCObjectsForNXSL(NXSL_VM *vm, const TCHAR *name, const TCHAR *description, UINT32 userId);
    virtual void applyDCIChanges();
    void setDCIModificationFlag() { m_dciListModified = true; }

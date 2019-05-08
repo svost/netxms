@@ -1355,7 +1355,6 @@ void DCItem::fillLastValueMessage(NXCPMessage *pMsg, UINT32 dwId)
 	pMsg->setField(dwId++, (WORD)getType());
 	pMsg->setField(dwId++, m_dwErrorCount);
 	pMsg->setField(dwId++, m_dwTemplateItemId);
-   pMsg->setField(dwId++, m_owner->getId());
 
 	int i;
    for(i = 0; i < getThresholdCount(); i++)

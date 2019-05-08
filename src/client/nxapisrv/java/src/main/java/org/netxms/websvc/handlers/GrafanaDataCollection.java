@@ -25,6 +25,9 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.netxms.client.NXCException;
 import org.netxms.client.NXCSession;
 import org.netxms.client.constants.HistoricalDataType;
@@ -36,9 +39,7 @@ import org.netxms.client.objects.DataCollectionTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 public class GrafanaDataCollection extends AbstractHandler
 {
@@ -76,59 +77,55 @@ public class GrafanaDataCollection extends AbstractHandler
     */
    private JsonArray getGraphData(Map<String, String> query) throws Exception
    {
-      JsonParser parser = new JsonParser();
-      JsonElement element = parser.parse(query.get("targets"));
-      if (!element.isJsonArray())
-         return new JsonArray();
-      
-      JsonArray targets = element.getAsJsonArray();
+      JSONArray targets = new JSONArray(query.get("targets"));
       
       DateFormat format = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSX");
       Date from = format.parse(query.get("from").substring(1, query.get("from").length()-1));
       Date to = format.parse(query.get("to").substring(1, query.get("to").length()-1));
 
       JsonArray result = new JsonArray();
-      for(JsonElement e : targets)
+      for(Object o : targets)
       {
-         if (!e.getAsJsonObject().has("dciTarget") || !e.getAsJsonObject().has("dci"))
-            continue;
-
-         JsonObject dciTarget = e.getAsJsonObject().getAsJsonObject("dciTarget");
-         JsonObject dci = e.getAsJsonObject().getAsJsonObject("dci");
-
-         Long dciTargetId = Long.parseLong(dciTarget.get("id").getAsString());
-         Long dciId = Long.parseLong(dci.get("id").getAsString());
-
-         String dciName = dci.get("name").getAsString();
-         if (dciId == 0 && !dciName.isEmpty())
+         if (o instanceof JSONObject)
          {
-            String dciTargetName = dciTarget.get("name").getAsString();
+            JSONObject object = (JSONObject)o;
 
-            Boolean searchByName = e.getAsJsonObject().has("searchByName") ?
-                  e.getAsJsonObject().get("searchByName").getAsBoolean() :
-                  false;
+            if (!object.has("dciTarget") || !object.has("dci"))
+               continue;
 
-            if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
+            JSONObject dciTarget = object.getJSONObject("dciTarget");
+            JSONObject dci = object.getJSONObject("dci");
+
+            long dciTargetId = dciTarget.optLong("id", 0);
+            long dciId = dci.optLong("id", 0);
+
+            String dciName = dci.getString("name").isEmpty() ? ".*" : dci.getString("name");
+            if (dciId == 0)
             {
-               dciTargetName = dciTargetName.substring(1, dciTargetName.length() - 1);
-            }
-            if (dciName.startsWith("/") && dciName.endsWith("/"))
-            {
-               dciName = dciName.substring(1, dciName.length() - 1);
-            }
+               String dciTargetName = dciTarget.getString("name").isEmpty() ? ".*" : dciTarget.getString("name");
+               boolean searchByName = object.optBoolean("searchByName");
 
-            List<DciValue> values = getSession()
-                  .findMatchingDCI(dciTargetId, dciTargetName, dciName, searchByName ? NXCSession.DCI_RES_SEARCH_NAME : 0);
+               if (dciTargetName.startsWith("/") && dciTargetName.endsWith("/"))
+               {
+                  dciTargetName = dciTargetName.substring(1, dciTargetName.length() - 1);
+               }
+               if (dciName.startsWith("/") && dciName.endsWith("/"))
+               {
+                  dciName = dciName.substring(1, dciName.length() - 1);
+               }
 
-            for(DciValue v : values)
-            {
-               result.add(fillGraphData(v.getNodeId(), v.getId(), v.getDescription(), from, to));
+               List<DciValue> values = getSession()
+                     .findMatchingDCI(dciTargetId, dciTargetName, dciName, searchByName ? NXCSession.DCI_RES_SEARCH_NAME : 0);
+               for(DciValue v : values)
+               {
+                  result.add(fillGraphData(v.getNodeId(), v.getId(), v.getDescription(), from, to));
+               }
             }
-         }
-         else
-         {
-            String legend = e.getAsJsonObject().get("legend").getAsString().isEmpty() ? dciName : e.getAsJsonObject().get("legend").getAsString();
-            result.add(fillGraphData(dciTargetId, dciId, legend, from, to));
+            else if (dciTargetId != 0 && dciId != 0)
+            {
+               String legend = object.getString("legend").isEmpty() ? dciName : object.getString("legend");
+               result.add(fillGraphData(dciTargetId, dciId, legend, from, to));
+            }
          }
       }
       return result;
@@ -197,12 +194,9 @@ public class GrafanaDataCollection extends AbstractHandler
       if (!query.containsKey("target"))
          return result;
 
-      JsonParser parser = new JsonParser();
-      JsonElement element = parser.parse(query.get("target"));
-
       try
       {
-         Long id = element.getAsLong();
+         long id = Long.parseLong(query.get("target"));
          DciValue[] values = getSession().getLastValues(id);
 
          for(DciValue v : values)

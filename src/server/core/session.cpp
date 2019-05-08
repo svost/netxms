@@ -1340,6 +1340,7 @@ void ClientSession::processRequest(NXCPMessage *request)
          break;
       case CMD_GET_MATCHING_DCI:
          getMatchingDCI(request);
+         break;
 #ifdef WITH_ZMQ
       case CMD_ZMQ_SUBSCRIBE_EVENT:
          zmqManageSubscription(request, zmq::EVENT, true);
@@ -14595,7 +14596,7 @@ void ClientSession::forcApplyPolicy(NXCPMessage *pRequest)
 }
 
 /**
- * Resolve DCO's by regex
+ * Resolve object DCO's by regex, if objectNameRegex is NULL, objectId will be used instead
  *
  * @param objectId for single object
  * @param objectNameRegex for multiple objects
@@ -14615,7 +14616,7 @@ ObjectArray<DCObject> *ClientSession::resolveDCOsByRegex(UINT32 objectId, const 
    {
       node = static_cast<Node *>(FindObjectById(objectId, OBJECT_NODE));
       if (node != NULL && node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
-         dcoList = node->getDCObjectsByRegex(dciRegex, searchByName);
+         dcoList = node->getDCObjectsByRegex(dciRegex, searchByName, m_dwUserId);
    }
    else
    {
@@ -14626,15 +14627,19 @@ ObjectArray<DCObject> *ClientSession::resolveDCOsByRegex(UINT32 objectId, const 
          for(int i = 0; i < objects->size(); i++)
          {
             node = static_cast<Node *>(objects->get(i));
-            ObjectArray<DCObject> *nodeDcoList = node->getDCObjectsByRegex(dciRegex, searchByName);
-            if (nodeDcoList != NULL)
+            if (node->checkAccessRights(m_dwUserId, OBJECT_ACCESS_READ))
             {
-               for(int n = 0; n < nodeDcoList->size(); n++)
+               ObjectArray<DCObject> *nodeDcoList = node->getDCObjectsByRegex(dciRegex, searchByName, m_dwUserId);
+               if (nodeDcoList != NULL)
                {
-                  dcoList->add(nodeDcoList->get(n));
+                  for(int n = 0; n < nodeDcoList->size(); n++)
+                  {
+                     dcoList->add(nodeDcoList->get(n));
+                  }
+                  delete (nodeDcoList);
                }
-               delete(nodeDcoList);
             }
+            node->decRefCount();
          }
       }
    }
@@ -14670,11 +14675,18 @@ void ClientSession::getMatchingDCI(NXCPMessage *request)
       UINT32 dciBase = VID_DCI_VALUES_BASE, count = 0;
       for(int i = 0; i < dcoList->size(); i++)
       {
-         DCObject *o = dcoList->get(i);
-         if (o->getType() == DCO_TYPE_ITEM && o->hasAccess(m_dwUserId))
+         if (dcoList->get(i)->getType() == DCO_TYPE_ITEM)
          {
-            static_cast<DCItem *>(o)->fillLastValueMessage(&msg, dciBase);
-            dciBase += 50;
+            DCItem *item = static_cast<DCItem *>(dcoList->get(i));
+            msg.setField(dciBase + 1, item->getId());
+            msg.setField(dciBase + 2, _T(""));
+            msg.setField(dciBase + 3, item->getType());
+            msg.setField(dciBase + 4, item->getStatus());
+            msg.setField(dciBase + 5, item->getOwnerId());
+            msg.setField(dciBase + 6, item->getDataSource());
+            msg.setField(dciBase + 7, item->getName());
+            msg.setField(dciBase + 8, item->getDescription());
+            dciBase += 10;
             count++;
          }
       }

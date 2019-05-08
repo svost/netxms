@@ -2774,14 +2774,17 @@ public class NXCSession
     */
    public List<AbstractObject> findObjectByRegex(String regex)
    {
-      List<AbstractObject> objects = getAllObjects();
-      Iterator<AbstractObject> objectIterator = objects.iterator();
+      List<AbstractObject> objects = new ArrayList<AbstractObject>();
+      Matcher matcher = Pattern.compile(regex).matcher("");
       
-      while(objectIterator.hasNext())
+      synchronized(objectList)
       {
-         AbstractObject o = objectIterator.next();
-         if (!o.getObjectName().matches(regex))
-            objectIterator.remove();
+         for(AbstractObject o : objectList.values())
+         {
+            matcher.reset(o.getObjectName());
+            if (matcher.matches())
+               objects.add(o);
+         }
       }
       
       return objects;
@@ -4217,9 +4220,9 @@ public class NXCSession
       List<DciValue> result = new ArrayList<DciValue>(count);
       
       Long base = NXCPCodes.VID_DCI_VALUES_BASE;
-      for(int i = 0; i < count; i++, base += 50)
+      for(int i = 0; i < count; i++, base += 10)
       {
-         result.add(DciValue.createFromMessage(0, response, base));
+         result.add(new SimpleDciValue(response, base));
       }
       
       return result;

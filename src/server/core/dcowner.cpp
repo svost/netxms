@@ -1062,9 +1062,10 @@ bool DataCollectionOwner::isDataCollectionSource(UINT32 nodeId)
  *
  * @param regex
  * @param searchName set to true if search by DCO name required
+ * @param userId to check user access
  * @return list of matching DCOs
  */
-ObjectArray<DCObject> *DataCollectionOwner::getDCObjectsByRegex(const TCHAR *regex, bool searchName) const
+ObjectArray<DCObject> *DataCollectionOwner::getDCObjectsByRegex(const TCHAR *regex, bool searchName, UINT32 userId) const
 {
    regex_t preg;
    if (_tregcomp(&preg, regex, REG_EXTENDED | REG_NOSUB) != 0)
@@ -1075,14 +1076,12 @@ ObjectArray<DCObject> *DataCollectionOwner::getDCObjectsByRegex(const TCHAR *reg
    for(int i = 0; i < m_dcObjects->size(); i++)
    {
       DCObject *o = m_dcObjects->get(i);
-      if (searchName && _tregexec(&preg, o->getName(), 0, NULL, 0) == 0)
-      {
+      if (!o->hasAccess(userId))
+         continue;
+      if (!searchName && _tregexec(&preg, o->getDescription(), 0, NULL, 0) == 0)
          result->add(o);
-      }
-      else if (_tregexec(&preg, o->getDescription(), 0, NULL, 0) == 0)
-      {
+      else if (_tregexec(&preg, o->getName(), 0, NULL, 0) == 0)
          result->add(o);
-      }
    }
 
    return result;

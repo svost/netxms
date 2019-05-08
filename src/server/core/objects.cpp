@@ -1017,7 +1017,30 @@ NetObj NXCORE_EXPORTABLE *FindObjectById(UINT32 dwId, int objClass)
 }
 
 /**
- * Find objects with name matching the regex
+ * Object name regex and class matching data
+ */
+struct OBJECT_NAME_REGEX_CLASS_DATA
+{
+   int objClass;
+   regex_t *nameRegex;
+};
+
+/**
+ * Filter for matching object name by regex and its class
+ *
+ * @param object
+ * @param userData
+ * @return
+ */
+static bool ObjectNameRegexAndClassFilter(NetObj *object, void *userData)
+{
+   OBJECT_NAME_REGEX_CLASS_DATA *data = static_cast<OBJECT_NAME_REGEX_CLASS_DATA *>(userData);
+   return !object->isDeleted() && (object->getObjectClass() == data->objClass) && (_tregexec(data->nameRegex, object->getName(), 0, NULL, 0) == 0);
+}
+
+/**
+ * Find objects whose name matches the regex
+ * (refCounter is increased for each object)
  *
  * @param regex for matching object name
  * @param objClass
@@ -1055,18 +1078,11 @@ ObjectArray<NetObj> NXCORE_EXPORTABLE *FindObjectsByRegex(const TCHAR *regex, in
          break;
    }
 
-   ObjectArray<NetObj> *objects = index->getObjects(true);
-   for(int i = 0; i < objects->size(); i++)
-   {
-      NetObj *o = objects->get(i);
-      if (_tregexec(&preg, o->getName(), 0, NULL, 0) != 0)
-      {
-         objects->remove(i);
-         i--;
-      }
-   }
+   OBJECT_NAME_REGEX_CLASS_DATA data;
+   data.nameRegex = &preg;
+   data.objClass = objClass;
 
-   return objects;
+   return index->getObjects(true, ObjectNameRegexAndClassFilter, &data);
 }
 
 /**
