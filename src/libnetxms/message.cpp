@@ -22,7 +22,7 @@
 **/
 #include "libnetxms.h"
 #include <nxcpapi.h>
-#include <zlib.h>
+#include <zlib_api.h>
 
 #undef uthash_malloc
 #define uthash_malloc(sz) m_pool.allocate(sz)
@@ -193,13 +193,8 @@ NXCPMessage::NXCPMessage(const NXCP_MESSAGE *msg, int version) : m_pool(SizeHint
       {
          m_flags &= ~MF_COMPRESSED; // clear "compressed" flag so it will not be mistakenly re-sent
 
-         z_stream stream;
-         stream.zalloc = Z_NULL;
-         stream.zfree = Z_NULL;
-         stream.opaque = Z_NULL;
-         stream.avail_in = (UINT32)ntohl(msg->size) - NXCP_HEADER_SIZE - 4;
-         stream.next_in = (BYTE *)msg + NXCP_HEADER_SIZE + 4;
-         if (inflateInit(&stream) != Z_OK)
+         ZStream stream = ZInflateInit((BYTE *)msg + NXCP_HEADER_SIZE + 4, ntohl(msg->size) - NXCP_HEADER_SIZE - 4);
+         if (stream == NULL)
          {
             nxlog_debug(6, _T("NXCPMessage: inflateInit() failed"));
             m_version = -1;   // error indicator
@@ -207,18 +202,17 @@ NXCPMessage::NXCPMessage(const NXCP_MESSAGE *msg, int version) : m_pool(SizeHint
          }
 
          m_data = m_pool.allocateArray<BYTE>(m_dataSize);
-         stream.next_out = m_data;
-         stream.avail_out = (UINT32)m_dataSize;
+         ZSetOutput(stream, m_data, m_dataSize);
 
-         if (inflate(&stream, Z_FINISH) != Z_STREAM_END)
+         if (ZInflate(stream, ZFlushMode::FINISH) != ZResult::STREAM_END)
          {
-            inflateEnd(&stream);
+            ZInflateEnd(stream);
             TCHAR buffer[256];
             nxlog_debug(6, _T("NXCPMessage: failed to decompress binary message %s with ID %d"), NXCPMessageCodeName(m_code, buffer), m_id);
             m_version = -1;   // error indicator
             return;
          }
-         inflateEnd(&stream);
+         ZInflateEnd(stream);
       }
       else
       {
@@ -237,13 +231,8 @@ NXCPMessage::NXCPMessage(const NXCP_MESSAGE *msg, int version) : m_pool(SizeHint
          m_flags &= ~MF_COMPRESSED; // clear "compressed" flag so it will not be mistakenly re-sent
          msgDataSize = (size_t)ntohl(*((UINT32 *)((BYTE *)msg + NXCP_HEADER_SIZE))) - NXCP_HEADER_SIZE;
 
-         z_stream stream;
-         stream.zalloc = Z_NULL;
-         stream.zfree = Z_NULL;
-         stream.opaque = Z_NULL;
-         stream.avail_in = (UINT32)ntohl(msg->size) - NXCP_HEADER_SIZE - 4;
-         stream.next_in = (BYTE *)msg + NXCP_HEADER_SIZE + 4;
-         if (inflateInit(&stream) != Z_OK)
+         ZStream stream = ZInflateInit((BYTE *)msg + NXCP_HEADER_SIZE + 4, ntohl(msg->size) - NXCP_HEADER_SIZE - 4);
+         if (stream == NULL)
          {
             nxlog_debug(6, _T("NXCPMessage: inflateInit() failed"));
             m_version = -1;   // error indicator
@@ -251,18 +240,17 @@ NXCPMessage::NXCPMessage(const NXCP_MESSAGE *msg, int version) : m_pool(SizeHint
          }
 
          msgData = m_pool.allocateArray<BYTE>(msgDataSize);
-         stream.next_out = msgData;
-         stream.avail_out = (UINT32)msgDataSize;
+         ZSetOutput(stream, msgData, msgDataSize);
 
-         if (inflate(&stream, Z_FINISH) != Z_STREAM_END)
+         if (ZInflate(stream, ZFlushMode::FINISH) != ZResult::STREAM_END)
          {
-            inflateEnd(&stream);
+            ZInflateEnd(stream);
             TCHAR buffer[256];
             nxlog_debug(6, _T("NXCPMessage: failed to decompress message %s with ID %d"), NXCPMessageCodeName(m_code, buffer), m_id);
             m_version = -1;   // error indicator
             return;
          }
-         inflateEnd(&stream);
+         ZInflateEnd(stream);
       }
       else
       {
@@ -1178,23 +1166,16 @@ NXCP_MESSAGE *NXCPMessage::serialize(bool allowCompression) const
    // Compress message payload if requested. Compression supported starting with NXCP version 4.
    if ((m_version >= 4) && allowCompression && (size > 128) && !(m_flags & (MF_STREAM | MF_DONT_COMPRESS)))
    {
-      z_stream stream;
-      stream.zalloc = Z_NULL;
-      stream.zfree = Z_NULL;
-      stream.opaque = Z_NULL;
-      stream.avail_in = 0;
-      stream.next_in = Z_NULL;
-      if (deflateInit(&stream, 9) == Z_OK)
+      ZStream stream = ZDeflateInit();
+      if (stream != NULL)
       {
-         size_t compBufferSize = deflateBound(&stream, (unsigned long)(size - NXCP_HEADER_SIZE));
+         size_t compBufferSize = ZDeflateBound(&stream, size - NXCP_HEADER_SIZE);
          BYTE *compressedMsg = (BYTE *)MemAlloc(compBufferSize + NXCP_HEADER_SIZE + 4);
-         stream.next_in = (BYTE *)msg->fields;
-         stream.avail_in = (UINT32)(size - NXCP_HEADER_SIZE);
-         stream.next_out = compressedMsg + NXCP_HEADER_SIZE + 4;
-         stream.avail_out = (UINT32)compBufferSize;
-         if (deflate(&stream, Z_FINISH) == Z_STREAM_END)
+         ZSetInput(stream, msg->fields, size - NXCP_HEADER_SIZE);
+         ZSetOutput(stream, compressedMsg + NXCP_HEADER_SIZE + 4, compBufferSize);
+         if (ZDeflate(stream, ZFlushMode::FINISH) == ZResult::STREAM_END)
          {
-            size_t compMsgSize = compBufferSize - stream.avail_out + NXCP_HEADER_SIZE + 4;
+            size_t compMsgSize = compBufferSize - ZGetAvailableOutput(stream) + NXCP_HEADER_SIZE + 4;
             // Message should be aligned to 8 bytes boundary
             compMsgSize += (8 - (compMsgSize % 8)) & 7;
             if (compMsgSize < size - 4)
@@ -1215,7 +1196,7 @@ NXCP_MESSAGE *NXCPMessage::serialize(bool allowCompression) const
          {
             MemFree(compressedMsg);
          }
-         deflateEnd(&stream);
+         ZDeflateEnd(stream);
       }
    }
    return msg;
@@ -1451,30 +1432,24 @@ String NXCPMessage::dump(const NXCP_MESSAGE *msg, int version)
    {
       msgDataSize = (size_t)ntohl(*((UINT32 *)((BYTE *)msg + NXCP_HEADER_SIZE))) - NXCP_HEADER_SIZE;
 
-      z_stream stream;
-      stream.zalloc = Z_NULL;
-      stream.zfree = Z_NULL;
-      stream.opaque = Z_NULL;
-      stream.avail_in = size - NXCP_HEADER_SIZE - 4;
-      stream.next_in = (BYTE *)msg + NXCP_HEADER_SIZE + 4;
-      if (inflateInit(&stream) != Z_OK)
+      ZStream stream = ZInflateInit((BYTE *)msg + NXCP_HEADER_SIZE + 4, size - NXCP_HEADER_SIZE - 4);
+      if (stream == NULL)
       {
          out.append(_T("Cannot decompress message"));
          return out;
       }
 
       msgData = allocatedMsgData = static_cast<BYTE*>(MemAlloc(msgDataSize));
-      stream.next_out = allocatedMsgData;
-      stream.avail_out = (UINT32)msgDataSize;
+      ZSetOutput(stream, allocatedMsgData, msgDataSize);
 
-      if (inflate(&stream, Z_FINISH) != Z_STREAM_END)
+      if (ZInflate(stream, ZFlushMode::FINISH) != ZResult::STREAM_END)
       {
-         inflateEnd(&stream);
+         ZInflateEnd(stream);
          MemFree(allocatedMsgData);
          out.append(_T("Cannot decompress message"));
          return out;
       }
-      inflateEnd(&stream);
+      ZInflateEnd(stream);
    }
    else
    {

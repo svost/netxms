@@ -46,7 +46,7 @@ find_existing_dir()
 
 AC_DEFUN([AC_C_CHECK_OPTION],[
 	AC_MSG_CHECKING(whether C compiler accepts $1)
-	OLD_CFLAGS="$CFLAGS"
+	OPT_OLD_CFLAGS="$CFLAGS"
 	if test "x$ac_compiler_gnu" = "xyes" ; then
 		CFLAGS="$CFLAGS -Werror $1"
 	else
@@ -54,18 +54,18 @@ AC_DEFUN([AC_C_CHECK_OPTION],[
 	fi
 	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]], [[ ]])],
 		[ 
-			CFLAGS="$OLD_CFLAGS $1"
+			CFLAGS="$OPT_OLD_CFLAGS $1"
 			AC_MSG_RESULT(yes) 
 		], 
 		[ 
-			CFLAGS="$OLD_CFLAGS"
+			CFLAGS="$OPT_OLD_CFLAGS"
 			AC_MSG_RESULT(no)
 		])
 ])
 
 AC_DEFUN([AC_CPP_CHECK_OPTION],[
 	AC_MSG_CHECKING(whether C compiler accepts $1)
-	OLD_CPPFLAGS="$CPPFLAGS"
+	OPT_OLD_CPPFLAGS="$CPPFLAGS"
 	if test "x$ac_compiler_gnu" = "xyes" ; then
 		CPPFLAGS="$CPPFLAGS -Werror $1"
 	else
@@ -73,18 +73,18 @@ AC_DEFUN([AC_CPP_CHECK_OPTION],[
 	fi
 	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]], [[ ]])],
 		[ 
-			CPPFLAGS="$OLD_CPPFLAGS $1"
+			CPPFLAGS="$OPT_OLD_CPPFLAGS $1"
 			AC_MSG_RESULT(yes) 
 		], 
 		[ 
-			CPPFLAGS="$OLD_CPPFLAGS"
+			CPPFLAGS="$OPT_OLD_CPPFLAGS"
 			AC_MSG_RESULT(no)
 		])
 ])
 
 AC_DEFUN([AC_CXX_CHECK_OPTION],[
 	AC_MSG_CHECKING(whether C++ compiler accepts $1)
-	OLD_CXXFLAGS="$CXXFLAGS"
+	OPT_OLD_CXXFLAGS="$CXXFLAGS"
 	if test "x$ac_compiler_gnu" = "xyes" ; then
 		CXXFLAGS="$CXXFLAGS -Werror $1"
 	else
@@ -93,11 +93,11 @@ AC_DEFUN([AC_CXX_CHECK_OPTION],[
 	AC_LANG_PUSH([C++])
 	AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]], [[ ]])],
 		[ 
-			CXXFLAGS="$OLD_CXXFLAGS $1"
+			CXXFLAGS="$OPT_OLD_CXXFLAGS $1"
 			AC_MSG_RESULT(yes) 
 		], 
 		[ 
-			CXXFLAGS="$OLD_CXXFLAGS"
+			CXXFLAGS="$OPT_OLD_CXXFLAGS"
 			AC_MSG_RESULT(no)
 		])
 	AC_LANG_POP([C++])
@@ -849,7 +849,7 @@ AC_ARG_ENABLE(64bit,
 AC_ARG_WITH(dist,
 [AS_HELP_STRING(--with-dist,for maintainers only)],
 	DB_DRIVERS="mysql mariadb pgsql odbc mssql sqlite oracle db2 informix"
-	MODULES="appagent jansson java-common libexpat libstrophe zlib libnetxms libnxjava install sqlite snmp libnxsl libnxmb libnxlp libnxpython libnxcc db server ncdrivers agent client nxscript nxcproxy"
+	MODULES="appagent jansson java-common libexpat libstrophe zlib zlibcf libnetxms libnxjava install sqlite snmp libnxsl libnxmb libnxlp libnxpython libnxcc db server ncdrivers agent client nxscript nxcproxy"
 	TOOLS="nxlptest"
 	SUBAGENT_DIRS="linux ds18x20 freebsd openbsd minix mqtt mysql netbsd sunos aix ipso hpux odbcquery informix oracle lmsensors darwin rpi java jmx bind9 ubntlw netsvc db2 tuxedo mongodb ssh vmgr xen lorawan asterisk python"
 	AGENT_DIRS="libnxtux"
@@ -2341,6 +2341,37 @@ else
 fi
 if test "x$HAVE_ZLIB" = "xno"; then
 	MODULES="zlib $MODULES"
+fi
+if test "x$CPUTYPE" = "xx86_64"; then
+	AC_CHECK_DECLS([RTLD_LOCAL, RTLD_DEEPBIND],[ ZLIBCF_DLOPEN_COMPAT=yes ],[ ZLIBCF_DLOPEN_COMPAT=no ],[
+#if HAVE_UNISTD_H
+#include <unistd.h>
+#endif
+#if HAVE_DLFCN_H
+#include <dlfcn.h>
+#endif
+	])
+
+	if test "x$ZLIBCF_DLOPEN_COMPAT" = "xyes"; then
+		AC_MSG_CHECKING(whether C compiler accepts -msse4.2)
+		OLD_CFLAGS="$CFLAGS"
+		if test "x$ac_compiler_gnu" = "xyes" ; then
+			CFLAGS="$CFLAGS -Werror -msse4.2"
+		else
+			CFLAGS="$CFLAGS -msse4.2"
+		fi
+		AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[ ]], [[ ]])],
+			[ 
+				AC_MSG_RESULT(yes) 
+				MODULES="zlibcf $MODULES"
+				ZLIBCF_CPPFLAGS="-msse4.2"
+				HAVE_ZLIBCF=yes
+			], 
+			[ 
+				AC_MSG_RESULT(no)
+			])
+		CFLAGS="$OLD_CFLAGS"
+	fi
 fi
 
 if test "x$FORCE_INTERNAL_EXPAT" = "xyes"; then
@@ -4266,6 +4297,7 @@ AC_SUBST(XEN_LDFLAGS)
 AC_SUBST(XEN_LIBS)
 AC_SUBST(ZEROMQ_CPPFLAGS)
 AC_SUBST(ZEROMQ_LDFLAGS)
+AC_SUBST(ZLIBCF_CPPFLAGS)
 
 NETXMS_LIBRARY_VERSION=`echo $VERSION | cut -f 1 -d '-'`
 AC_SUBST(NETXMS_LIBRARY_VERSION)
@@ -4478,6 +4510,7 @@ AC_CONFIG_FILES([
 	src/tools/nxgenguid/Makefile
 	src/tools/nxlptest/Makefile
 	src/zlib/Makefile
+	src/zlibcf/Makefile
 	sql/Makefile
 	tests/Makefile
 	tests/include/Makefile
@@ -4523,6 +4556,7 @@ echo
 echo "Version                 : ${VERSION}"
 echo "Prefix                  : ${prefix}"
 echo "Platform                : ${PLATFORM}"
+echo "CPU type                : ${CPUTYPE}"
 echo "Shared library suffix   : ${SHLIB_SUFFIX}"
 echo "Shared library version  : ${NETXMS_LIBRARY_VERSION}"
 if test "x$IPV6_SUPPORT" = "xyes"; then
@@ -4648,6 +4682,11 @@ if test "x${HAVE_ZLIB}" = "xno"; then
 	echo "Use internal zlib       : YES"
 else
 	echo "Use internal zlib       : NO"
+fi
+if test "x${HAVE_ZLIBCF}" = "xyes"; then
+	echo "Build nxzlibcf          : YES"
+else
+	echo "Build nxzlibcf          : NO"
 fi
 if test "x${FORCE_32BIT_BUILD}" = "xyes"; then
 	echo "Force 32bit build       : YES"
