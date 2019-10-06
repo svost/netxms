@@ -7,6 +7,7 @@
 #include <nxqueue.h>
 #include <nxcpapi.h>
 #include <nxproc.h>
+#include <zlib_api.h>
 #include <testtools.h>
 
 NETXMS_EXECUTABLE_HEADER(test-libnetxms)
@@ -2048,6 +2049,10 @@ int main(int argc, char *argv[])
    WSAStartup(MAKEWORD(2, 2), &wsaData);
 #endif
 
+   InitZLibWrapper();
+
+   TestMessageClass();
+   /*
    TestMemoryPool();
    TestObjectMemoryPool();
    TestString();
@@ -2058,7 +2063,6 @@ int main(int argc, char *argv[])
    TestStringFunctionsA();
    TestStringFunctionsW();
    TestPatternMatching();
-   TestMessageClass();
    TestMsgWaitQueue();
    TestMacAddress();
    TestInetAddress();
@@ -2084,5 +2088,6 @@ int main(int argc, char *argv[])
    TestSubProcess(argv[0]);
    TestThreadPool();
    TestThreadCountAndMaxWaitTime();
+   */
    return 0;
 }

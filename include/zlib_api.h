@@ -40,6 +40,8 @@ enum class ZResult
    ERROR
 };
 
+void LIBNETXMS_EXPORTABLE InitZLibWrapper();
+
 ZStream LIBNETXMS_EXPORTABLE ZInflateInit(const void *input, size_t size);
 ZResult LIBNETXMS_EXPORTABLE ZInflate(ZStream stream, ZFlushMode flush);
 void LIBNETXMS_EXPORTABLE ZInflateEnd(ZStream stream);

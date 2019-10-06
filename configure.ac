@@ -2366,6 +2366,7 @@ if test "x$CPUTYPE" = "xx86_64"; then
 				MODULES="zlibcf $MODULES"
 				ZLIBCF_CPPFLAGS="-msse4.2"
 				HAVE_ZLIBCF=yes
+				AC_DEFINE(HAVE_ZLIB_CF, 1, Define to 1 if Cloudflare ZLib is bundled)
 			], 
 			[ 
 				AC_MSG_RESULT(no)

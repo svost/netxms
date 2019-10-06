@@ -94,7 +94,7 @@ ZResult ZDeflate_STD(ZStream stream, ZFlushMode flush)
  */
 void ZDeflateEnd_STD(ZStream stream)
 {
-   inflateEnd(static_cast<z_stream*>(stream));
+   deflateEnd(static_cast<z_stream*>(stream));
    MemFree(stream);
 }
 

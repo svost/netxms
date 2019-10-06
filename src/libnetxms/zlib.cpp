@@ -76,6 +76,7 @@ void LIBNETXMS_EXPORTABLE InitZLibWrapper()
 #ifdef HAVE_ZLIB_CF
    if (LoadZLibCF())
    {
+_tprintf(_T("zlibcf loaded\n"));
       fp_ZInflateInit = ZInflateInit_CF;
       fp_ZInflate = ZInflate_CF;
       fp_ZInflateEnd = ZInflateEnd_CF;
@@ -86,6 +87,7 @@ void LIBNETXMS_EXPORTABLE InitZLibWrapper()
       fp_ZSetInput = ZSetInput_CF;
       fp_ZSetOutput = ZSetOutput_CF;
    }
+   else _tprintf(_T("load error\n"));
 #endif
 }
 
