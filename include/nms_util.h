@@ -604,6 +604,30 @@ public:
          free(p);
       }
    }
+
+   /**
+    * Clear memory pool without calling destructors for individual objects
+    */
+   void clear()
+   {
+      if (m_lock != INVALID_MUTEX_HANDLE)
+         MutexLock(m_lock);
+
+      void *r = *((void **)m_currentRegion);
+      while(r != NULL)
+      {
+         void *n = *((void **)r);
+         MemFree(r);
+         r = n;
+      }
+
+      *((void **)m_currentRegion) = NULL; // pointer to previous region
+      m_firstDeleted = NULL;
+      m_allocated = m_headerSize;
+
+      if (m_lock != INVALID_MUTEX_HANDLE)
+         MutexUnlock(m_lock);
+   }
 };
 
 /**

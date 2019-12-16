@@ -62,7 +62,11 @@ void Queue::commonInit()
  */
 Queue::~Queue()
 {
-   clear();
+   if (m_owner)
+   {
+      for(QueueElement *e = m_head->next; e != NULL; e = e->next)
+         m_destructor(e->value);
+   }
    MutexDestroy(m_headLock);
    MutexDestroy(m_tailLock);
    ConditionDestroy(m_condWakeup);
@@ -76,13 +80,15 @@ void Queue::put(void *value)
    QueueElement *element = m_elements.allocate();
    element->next = NULL;
    element->value = value;
+
    MutexLock(m_tailLock);
    m_tail->next = element;
    m_tail = element;
-   MutexUnlock(m_tailLock);
 
    if (InterlockedIncrement(&m_size) == 1)
       ConditionSet(m_condWakeup);
+
+   MutexUnlock(m_tailLock);
 }
 
 /**
@@ -90,6 +96,20 @@ void Queue::put(void *value)
  */
 void Queue::insert(void *value)
 {
+   QueueElement *element = m_elements.allocate();
+   element->value = value;
+
+   MutexLock(m_headLock);
+   MutexLock(m_tailLock);
+
+   element->next = m_head->next;
+   m_head->next = element;
+
+   if (InterlockedIncrement(&m_size) == 1)
+      ConditionSet(m_condWakeup);
+
+   MutexUnlock(m_tailLock);
+   MutexUnlock(m_headLock);
 }
 
 /**
@@ -97,6 +117,9 @@ void Queue::insert(void *value)
  */
 void *Queue::get()
 {
+   if (m_shutdownFlag)
+      return INVALID_POINTER_VALUE;
+
    MutexLock(m_headLock);
    QueueElement *head = m_head;
    QueueElement *newHead = head->next;
@@ -106,6 +129,7 @@ void *Queue::get()
    {
       value = newHead->value;
       m_head = newHead;
+      m_elements.free(head);
       InterlockedDecrement(&m_size);
    }
    else
@@ -141,6 +165,24 @@ void *Queue::getOrBlock(UINT32 timeout)
  */
 void Queue::clear()
 {
+   MutexLock(m_headLock);
+   MutexLock(m_tailLock);
+
+   if (m_owner)
+   {
+      for(QueueElement *e = m_head->next; e != NULL; e = e->next)
+         m_destructor(e->value);
+   }
+
+   m_elements.clear();
+
+   m_head = m_elements.allocate();
+   memset(m_head, 0, sizeof(QueueElement));
+   m_tail = m_head;
+   m_size = 0;
+
+   MutexUnlock(m_tailLock);
+   MutexUnlock(m_headLock);
 }
 
 /**
@@ -149,6 +191,8 @@ void Queue::clear()
  */
 void Queue::setShutdownMode()
 {
+   m_shutdownFlag = true;
+   ConditionSet(m_condWakeup);
 }
 
 /**
@@ -158,7 +202,24 @@ void Queue::setShutdownMode()
  */
 void *Queue::find(const void *key, QueueComparator comparator, void *(*transform)(void*))
 {
-   return NULL;
+   void *value = NULL;
+
+   MutexLock(m_headLock);
+   MutexLock(m_tailLock);
+
+   for(QueueElement *e = m_head->next; e != NULL; e = e->next)
+   {
+      if (comparator(key, e->value))
+      {
+         value = (transform != NULL) ? transform(e->value) : e->value;
+         break;
+      }
+   }
+
+   MutexUnlock(m_tailLock);
+   MutexUnlock(m_headLock);
+
+   return value;
 }
 
 /**
@@ -169,6 +230,30 @@ bool Queue::remove(const void *key, QueueComparator comparator)
 {
 	bool success = false;
 
+   MutexLock(m_headLock);
+   MutexLock(m_tailLock);
+
+   QueueElement *prev = m_head;
+   for(QueueElement *e = m_head->next; e != NULL; e = e->next)
+   {
+      if (comparator(key, e->value))
+      {
+         prev->next = e->next;
+         if (m_tail == e)
+            m_tail = prev;
+         if (m_owner)
+            m_destructor(e->value);
+         m_elements.free(e);
+         InterlockedDecrement(&m_size);
+         success = true;
+         break;
+      }
+      prev = e;
+   }
+
+   MutexUnlock(m_tailLock);
+   MutexUnlock(m_headLock);
+
 	return success;
 }
 
@@ -177,4 +262,15 @@ bool Queue::remove(const void *key, QueueComparator comparator)
  */
 void Queue::forEach(QueueEnumerationCallback callback, void *context)
 {
+   MutexLock(m_headLock);
+   MutexLock(m_tailLock);
+
+   for(QueueElement *e = m_head->next; e != NULL; e = e->next)
+   {
+      if (callback(e->value, context) == _STOP)
+         break;
+   }
+
+   MutexUnlock(m_tailLock);
+   MutexUnlock(m_headLock);
 }
