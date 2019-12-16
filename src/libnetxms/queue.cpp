@@ -26,11 +26,8 @@
 /**
  * Queue constructor
  */
-Queue::Queue(size_t initialSize, size_t bufferIncrement, bool owner)
+Queue::Queue(size_t regionCapacity, bool owner) : m_elements(regionCapacity, true)
 {
-   m_initialSize = initialSize;
-   m_bufferSize = initialSize;
-   m_bufferIncrement = bufferIncrement;
    m_owner = owner;
 	commonInit();
 }
@@ -38,11 +35,8 @@ Queue::Queue(size_t initialSize, size_t bufferIncrement, bool owner)
 /**
  * Default queue constructor
  */
-Queue::Queue(bool owner)
+Queue::Queue(bool owner) : m_elements(256, true)
 {
-   m_initialSize = 256;
-   m_bufferSize = 256;
-   m_bufferIncrement = 32;
    m_owner = owner;
 	commonInit();
 }
@@ -52,12 +46,13 @@ Queue::Queue(bool owner)
  */
 void Queue::commonInit()
 {
-   m_mutexQueueAccess = MutexCreate();
+   m_headLock = MutexCreate();
+   m_tailLock = MutexCreate();
    m_condWakeup = ConditionCreate(FALSE);
-   m_numElements = 0;
-   m_first = 0;
-   m_last = 0;
-   m_elements = MemAllocArray<void*>(m_bufferSize);
+   m_head = m_elements.allocate();
+   memset(m_head, 0, sizeof(QueueElement));
+   m_tail = m_head;
+   m_size = 0;
 	m_shutdownFlag = false;
 	m_destructor = MemFree;
 }
@@ -67,70 +62,34 @@ void Queue::commonInit()
  */
 Queue::~Queue()
 {
-   if (m_owner)
-   {
-      for(size_t i = 0, pos = m_first; i < m_numElements; i++)
-      {
-         if (m_elements[pos] != INVALID_POINTER_VALUE)
-            m_destructor(m_elements[pos]);
-         pos++;
-         if (pos == m_bufferSize)
-            pos = 0;
-      }
-   }
-   MutexDestroy(m_mutexQueueAccess);
+   clear();
+   MutexDestroy(m_headLock);
+   MutexDestroy(m_tailLock);
    ConditionDestroy(m_condWakeup);
-   MemFree(m_elements);
 }
 
 /**
  * Put new element into queue
  */
-void Queue::put(void *pElement)
+void Queue::put(void *value)
 {
-   lock();
-   if (m_numElements == m_bufferSize)
-   {
-      // Extend buffer
-      m_bufferSize += m_bufferIncrement;
-      m_elements = MemReallocArray(m_elements, m_bufferSize);
-      
-      // Move free space
-      memmove(&m_elements[m_first + m_bufferIncrement], &m_elements[m_first],
-              sizeof(void *) * (m_bufferSize - m_first - m_bufferIncrement));
-      m_first += m_bufferIncrement;
-   }
-   m_elements[m_last++] = pElement;
-   if (m_last == m_bufferSize)
-      m_last = 0;
-   m_numElements++;
-   ConditionSet(m_condWakeup);
-   unlock();
+   QueueElement *element = m_elements.allocate();
+   element->next = NULL;
+   element->value = value;
+   MutexLock(m_tailLock);
+   m_tail->next = element;
+   m_tail = element;
+   MutexUnlock(m_tailLock);
+
+   if (InterlockedIncrement(&m_size) == 1)
+      ConditionSet(m_condWakeup);
 }
 
 /**
  * Insert new element into the beginning of a queue
  */
-void Queue::insert(void *pElement)
+void Queue::insert(void *value)
 {
-   lock();
-   if (m_numElements == m_bufferSize)
-   {
-      // Extend buffer
-      m_bufferSize += m_bufferIncrement;
-      m_elements = MemReallocArray(m_elements, m_bufferSize);
-      
-      // Move free space
-      memmove(&m_elements[m_first + m_bufferIncrement], &m_elements[m_first],
-              sizeof(void *) * (m_bufferSize - m_first - m_bufferIncrement));
-      m_first += m_bufferIncrement;
-   }
-   if (m_first == 0)
-      m_first = m_bufferSize;
-   m_elements[--m_first] = pElement;
-   m_numElements++;
-   ConditionSet(m_condWakeup);
-   unlock();
 }
 
 /**
@@ -138,26 +97,23 @@ void Queue::insert(void *pElement)
  */
 void *Queue::get()
 {
-   void *pElement = NULL;
+   MutexLock(m_headLock);
+   QueueElement *head = m_head;
+   QueueElement *newHead = head->next;
 
-   lock();
-	if (m_shutdownFlag)
-	{
-		pElement = INVALID_POINTER_VALUE;
-	}
-	else
+   void *value;
+   if (newHead != NULL)
    {
-		while((m_numElements > 0) && (pElement == NULL))
-		{
-			pElement = m_elements[m_first++];
-			if (m_first == m_bufferSize)
-				m_first = 0;
-			m_numElements--;
-		}
-      shrink();
+      value = newHead->value;
+      m_head = newHead;
+      InterlockedDecrement(&m_size);
    }
-   unlock();
-   return pElement;
+   else
+   {
+      value = NULL;
+   }
+   MutexUnlock(m_headLock);
+   return value;
 }
 
 /**
@@ -165,19 +121,19 @@ void *Queue::get()
  */
 void *Queue::getOrBlock(UINT32 timeout)
 {
-   void *pElement = get();
-   if (pElement != NULL)
+   void *value = get();
+   if (value != NULL)
    {
-      return pElement;
+      return value;
    }
 
    do
    {
       if (!ConditionWait(m_condWakeup, timeout))
          break;
-      pElement = get();
-   } while(pElement == NULL);
-   return pElement;
+      value = get();
+   } while(value == NULL);
+   return value;
 }
 
 /**
@@ -185,23 +141,6 @@ void *Queue::getOrBlock(UINT32 timeout)
  */
 void Queue::clear()
 {
-   lock();
-   if (m_owner)
-   {
-      for(size_t i = 0, pos = m_first; i < m_numElements; i++)
-      {
-         if (m_elements[pos] != INVALID_POINTER_VALUE)
-            m_destructor(m_elements[pos]);
-         pos++;
-         if (pos == m_bufferSize)
-            pos = 0;
-      }
-   }
-   m_numElements = 0;
-   m_first = 0;
-   m_last = 0;
-   shrink();
-   unlock();
 }
 
 /**
@@ -210,10 +149,6 @@ void Queue::clear()
  */
 void Queue::setShutdownMode()
 {
-	lock();
-	m_shutdownFlag = true;
-	ConditionSet(m_condWakeup);
-	unlock();
 }
 
 /**
@@ -223,22 +158,7 @@ void Queue::setShutdownMode()
  */
 void *Queue::find(const void *key, QueueComparator comparator, void *(*transform)(void*))
 {
-	void *element = NULL;
-
-	lock();
-	for(size_t i = 0, pos = m_first; i < m_numElements; i++)
-	{
-		if ((m_elements[pos] != NULL) && (m_elements[pos] != INVALID_POINTER_VALUE) && comparator(key, m_elements[pos]))
-		{
-			element = (transform != NULL) ? transform(m_elements[pos]) : m_elements[pos];
-			break;
-		}
-		pos++;
-		if (pos == m_bufferSize)
-			pos = 0;
-	}
-	unlock();
-	return element;
+   return NULL;
 }
 
 /**
@@ -249,22 +169,6 @@ bool Queue::remove(const void *key, QueueComparator comparator)
 {
 	bool success = false;
 
-	lock();
-	for(size_t i = 0, pos = m_first; i < m_numElements; i++)
-	{
-		if ((m_elements[pos] != NULL) && comparator(key, m_elements[pos]))
-		{
-		   if (m_owner && (m_elements[pos] != INVALID_POINTER_VALUE))
-		      m_destructor(m_elements[pos]);
-			m_elements[pos] = NULL;
-			success = true;
-			break;
-		}
-		pos++;
-		if (pos == m_bufferSize)
-			pos = 0;
-	}
-	unlock();
 	return success;
 }
 
@@ -273,35 +177,4 @@ bool Queue::remove(const void *key, QueueComparator comparator)
  */
 void Queue::forEach(QueueEnumerationCallback callback, void *context)
 {
-   lock();
-   for(size_t i = 0, pos = m_first; i < m_numElements; i++)
-   {
-      if ((m_elements[pos] != NULL) && (m_elements[pos] != INVALID_POINTER_VALUE))
-      {
-         if (callback(m_elements[pos], context) == _STOP)
-            break;
-      }
-      pos++;
-      if (pos == m_bufferSize)
-         pos = 0;
-   }
-   unlock();
-}
-
-/**
- * Shrink queue if possible
- */
-void Queue::shrink()
-{
-   if ((m_bufferSize == m_initialSize) || (m_numElements > m_initialSize / 2) || ((m_numElements > 0) && (m_last < m_first)))
-      return;
-
-   if ((m_numElements > 0) && (m_first > 0))
-   {
-      memmove(&m_elements[0], &m_elements[m_first], sizeof(void *) * m_numElements);
-      m_last -= m_first;
-      m_first = 0;
-   }
-   m_bufferSize = m_initialSize;
-   m_elements = MemReallocArray(m_elements, m_bufferSize);
 }

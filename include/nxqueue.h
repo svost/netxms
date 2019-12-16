@@ -36,6 +36,19 @@ typedef bool (*QueueComparator)(const void *key, const void *object);
 typedef EnumerationCallbackResult (*QueueEnumerationCallback)(const void *object, void *context);
 
 /**
+ * Queue element (internal structure)
+ */
+struct QueueElement
+{
+   QueueElement *next;
+   void *value;
+};
+
+#ifdef _WIN32
+template class LIBNETXMS_EXPORTABLE ObjectMemoryPool<QueueElement>;
+#endif
+
+/**
  * Queue class
  */
 class LIBNETXMS_EXPORTABLE Queue
@@ -43,39 +56,33 @@ class LIBNETXMS_EXPORTABLE Queue
    DISABLE_COPY_CTOR(Queue)
 
 private:
-   MUTEX m_mutexQueueAccess;
+   MUTEX m_headLock;
+   MUTEX m_tailLock;
    CONDITION m_condWakeup;
-   void **m_elements;
-   size_t m_numElements;
-   size_t m_bufferSize;
-   size_t m_initialSize;
-   size_t m_first;
-   size_t m_last;
-   size_t m_bufferIncrement;
+   ObjectMemoryPool<QueueElement> m_elements;
+   QueueElement *m_head;
+   QueueElement *m_tail;
+   VolatileCounter m_size;
 	bool m_shutdownFlag;
 	bool m_owner;
 
 	void commonInit();
-   void lock() { MutexLock(m_mutexQueueAccess); }
-   void unlock() { MutexUnlock(m_mutexQueueAccess); }
-   void shrink();
 
 protected:
    void (*m_destructor)(void*);
 
 public:
    Queue(bool owner = false);
-   Queue(size_t initialSize, size_t bufferIncrement, bool owner = false);
+   Queue(size_t regionCapacity, bool owner = false);
    virtual ~Queue();
 
-   void put(void *object);
-	void insert(void *object);
+   void put(void *value);
+	void insert(void *value);
 	void setShutdownMode();
 	void setOwner(bool owner) { m_owner = owner; }
    void *get();
    void *getOrBlock(UINT32 timeout = INFINITE);
-   size_t size() const { return m_numElements; }
-   size_t allocated() const { return m_bufferSize; }
+   size_t size() const { return static_cast<size_t>(m_size); }
    void clear();
 	void *find(const void *key, QueueComparator comparator, void *(*transform)(void*) = NULL);
 	bool remove(const void *key, QueueComparator comparator);

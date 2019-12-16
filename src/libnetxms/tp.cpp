@@ -73,7 +73,7 @@ private:
 
 public:
    SerializationQueue() : Queue(false) { m_maxWaitTime = 0; }
-   SerializationQueue(size_t initialSize, size_t bufferIncrement) : Queue(initialSize, bufferIncrement, false) { m_maxWaitTime = 0; }
+   SerializationQueue(size_t regionSize) : Queue(regionSize, false) { m_maxWaitTime = 0; }
 
    UINT32 getMaxWaitTime() { return m_maxWaitTime; }
    void updateMaxWaitTime(UINT32 waitTime) { m_maxWaitTime = std::max(waitTime, m_maxWaitTime); }
@@ -483,7 +483,7 @@ void LIBNETXMS_EXPORTABLE ThreadPoolExecuteSerialized(ThreadPool *p, const TCHAR
    SerializationQueue *q = p->serializationQueues->get(key);
    if (q == NULL)
    {
-      q = new SerializationQueue(8, 8);
+      q = new SerializationQueue(64);
       p->serializationQueues->set(key, q);
 
       RequestSerializationData *data = new RequestSerializationData;

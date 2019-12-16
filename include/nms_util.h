@@ -496,12 +496,13 @@ private:
    size_t m_regionSize;
    size_t m_elementSize;
    size_t m_allocated;
+   MUTEX m_lock;
 
 public:
    /**
     * Create new memory pool
     */
-   ObjectMemoryPool(size_t regionCapacity = 256)
+   ObjectMemoryPool(size_t regionCapacity = 256, bool synchronized = false)
    {
       m_headerSize = sizeof(void*);
       if (m_headerSize % 16 != 0)
@@ -514,12 +515,13 @@ public:
       *((void **)m_currentRegion) = NULL; // pointer to previous region
       m_firstDeleted = NULL;
       m_allocated = m_headerSize;
+      m_lock = synchronized ? MutexCreateFast() : INVALID_MUTEX_HANDLE;
    }
 
    /**
     * Destroy memory pool. Will destroy allocated memory but object destructors will not be called.
     */
-   ~ObjectMemoryPool()
+   virtual ~ObjectMemoryPool()
    {
       void *r = m_currentRegion;
       while(r != NULL)
@@ -528,6 +530,8 @@ public:
          MemFree(r);
          r = n;
       }
+      if (m_lock != INVALID_MUTEX_HANDLE)
+         MutexDestroy(m_lock);
    }
 
    /**
@@ -535,6 +539,9 @@ public:
     */
    T *allocate()
    {
+      if (m_lock != INVALID_MUTEX_HANDLE)
+         MutexLock(m_lock);
+
       T *p;
       if (m_firstDeleted != NULL)
       {
@@ -554,6 +561,10 @@ public:
          p = (T*)((char*)m_currentRegion + m_headerSize);
          m_allocated = m_headerSize + m_elementSize;
       }
+
+      if (m_lock != INVALID_MUTEX_HANDLE)
+         MutexUnlock(m_lock);
+
       return p;
    }
 
@@ -573,8 +584,12 @@ public:
    {
       if (p != NULL)
       {
+         if (m_lock != INVALID_MUTEX_HANDLE)
+            MutexLock(m_lock);
          *((T**)p) = m_firstDeleted;
          m_firstDeleted = p;
+         if (m_lock != INVALID_MUTEX_HANDLE)
+            MutexUnlock(m_lock);
       }
    }
 
