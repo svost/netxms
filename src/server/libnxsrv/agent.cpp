@@ -949,7 +949,7 @@ UINT32 AgentConnection::getServiceParameter(const TCHAR *url, UINT32 retentionTi
 
    NXCPMessage msg(m_nProtocolVersion);
    UINT32 dwRqId = generateRequestId();
-   msg.setCode(CMD_GET_PARAMETER);
+   msg.setCode(CMD_GET_SERVICE_PARAMS);
    msg.setId(dwRqId);
    msg.setField(VID_URL, url);
    msg.setField(VID_RETENTION_TIME, retentionTime);

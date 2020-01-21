@@ -1332,14 +1332,10 @@ typedef struct
 #define VID_IMPACT                  ((UINT32)672)
 #define VID_CHASSIS_PLACEMENT       ((UINT32)673)
 #define VID_ALLOW_PATH_EXPANSION    ((UINT32)674)
-<<<<<<< Updated upstream
 #define VID_TAG                     ((UINT32)675)
-||||||| merged common ancestors
-=======
-#define VID_NUM_HEADERS             ((UINT32)675)
-#define VID_REQUEST_TYPE            ((UINT32)676)
-#define VID_VERIFY_CERT             ((UINT32)677)
->>>>>>> Stashed changes
+#define VID_NUM_HEADERS             ((UINT32)676)
+#define VID_REQUEST_TYPE            ((UINT32)677)
+#define VID_VERIFY_CERT             ((UINT32)678)
 
 // Base variabe for single threshold in message
 #define VID_THRESHOLD_BASE          ((UINT32)0x00800000)
