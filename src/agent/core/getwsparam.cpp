@@ -16,7 +16,7 @@
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **
-** File: getserviceparam.cpp
+** File: getwsparam.cpp
 **
 **/
 
@@ -28,6 +28,8 @@
 // workaround for older cURL versions
 #define CURL_MAX_HTTP_HEADER CURL_MAX_WRITE_SIZE
 #endif
+
+#define DEBUG_TAG
 
 enum class TextType
 {
@@ -55,10 +57,11 @@ private:
 
 public:
    ServiceEntry() { m_lastRequestTime = 0; m_type = TextType::Text; m_json = NULL; }
+   ~ServiceEntry();
 
    void getParams(StringList *params, NXCPMessage *response);
    bool isDataExpired(UINT32 retentionTime) { return (time(NULL) - m_lastRequestTime) >= retentionTime; }
-   UINT32 updateData(const TCHAR *url, const char *userName, const char *password, long authType, struct curl_slist *headers, bool peerVerify);
+   UINT32 updateData(const TCHAR *url, const char *userName, const char *password, long authType, struct curl_slist *headers, bool peerVerify, const char *topLevelName);
 
    void lock() { m_lock.lock(); }
    void unlock() { m_lock.unlock(); }
@@ -71,18 +74,76 @@ Mutex s_serviceCacheLock;
 StringObjectMap<ServiceEntry> s_sericeCashe(true);
 
 /**
+ * Destructor
+ */
+ServiceEntry::~ServiceEntry()
+{
+   if (m_json != NULL)
+      json_decref(m_json);
+}
+
+/**
  * Get parameters from XML cashed data
  */
 void ServiceEntry::getParamsFromXML(StringList *params, NXCPMessage *response)
 {
    UINT32 fieldId = VID_PARAM_LIST_BASE;
+   int resultCount = 0;
+   AgentWriteLog(3, _T("Param list: %d"), params->size());
+   AgentWriteLog(3, _T("XML: %s"), (const TCHAR *)m_xml.createXml());
    for (int i = 0; i < params->size(); i++)
    {
-      response->setField(fieldId++, params->get(i));
-      response->setField(fieldId++, m_xml.getValue(params->get(i), NULL));
+      const  TCHAR *root = m_xml.getEntry(_T("/"))->getName();
+      const TCHAR *result = m_xml.getValue(params->get(i), NULL);
+      if (result != NULL)
+      {
+         response->setField(fieldId++, params->get(i));
+         response->setField(fieldId++, result);
+         resultCount++;
+      }
    }
-   response->setField(VID_NUM_PARAMETERS, params->size());
+   response->setField(VID_NUM_PARAMETERS, resultCount);
 }
+
+/**
+ * Create NXSL value from json_t
+ */
+static bool SetValueFromJson(json_t *json, UINT32 fieldId, NXCPMessage *response)
+{
+   bool skip = false;
+   TCHAR result[MAX_RESULT_LENGTH];
+   switch(json_typeof(json))
+   {
+      case JSON_OBJECT:
+         skip = true;
+         break;
+      case JSON_ARRAY:
+         skip = true;
+         break;
+      case JSON_STRING:
+         response->setFieldFromUtf8String(fieldId, json_string_value(json));
+         break;
+      case JSON_INTEGER:
+         ret_int64(result, static_cast<INT64>(json_integer_value(json)));
+         response->setField(fieldId, result);
+         break;
+      case JSON_REAL:
+         ret_double(result, json_real_value(json));
+         response->setField(fieldId, result);
+         break;
+      case JSON_TRUE:
+         response->setField(fieldId, _T("true"));
+         break;
+      case JSON_FALSE:
+         response->setField(fieldId, _T("false"));
+         break;
+      default:
+         skip = true;
+         break;
+   }
+   return !skip;
+}
+
 
 /**
  * Get parameters from JSON cashed data
@@ -90,35 +151,45 @@ void ServiceEntry::getParamsFromXML(StringList *params, NXCPMessage *response)
 void ServiceEntry::getParamsFromJSON(StringList *params, NXCPMessage *response)
 {
    UINT32 fieldId = VID_PARAM_LIST_BASE;
+   int resultCount = 0;
    for (int i = 0; i < params->size(); i++)
    {
-      response->setField(fieldId++, params->get(i));
-
       json_t *lastObj = m_json;
-      TCHAR *item = MemCopyString(params->get(i));
-      TCHAR *separator = NULL;
+#ifdef UNICODE
+      char *copy = UTF8StringFromWideString(params->get(i));
+#else
+      char *copy = UTF8StringFromMBString(params->get(i));
+#endif
+      char *item = copy;
+      char *separator = NULL;
+      if (!strncmp(item, "/", 1))
+         item++;
       do
       {
-         separator = _tcschr(item, _T('\\'));
+         separator = strchr(item, '/');
          if(separator != NULL)
             *separator = 0;
 
-         char attr[256];
-#ifdef UNICODE
-         WideCharToMultiByte(CP_UTF8, 0, item, -1, attr, 256, NULL, NULL);
-#else
-         mb_to_utf8(item, -1, attr, 256);
-#endif
-         attr[255] = 0;
-
-         lastObj = json_object_get(lastObj, attr);
+         lastObj = json_object_get(lastObj, item);
          if(separator != NULL)
             item = separator+1;
-      } while (separator != NULL && *item != 0);
-      MemFree(item);
-      response->setFieldFromUtf8String(fieldId++, lastObj != NULL ? json_string_value(lastObj) : NULL);
+      } while (separator != NULL && *item != 0 && lastObj != NULL);
+      MemFree(copy);
+      if (lastObj != NULL)
+      {
+         response->setField(fieldId++, params->get(i));
+         if(SetValueFromJson(lastObj, fieldId, response))
+         {
+            fieldId++;
+            resultCount++;
+         }
+         else
+         {
+            fieldId--;
+         }
+      }
    }
-   response->setField(VID_NUM_PARAMETERS, params->size());
+   response->setField(VID_NUM_PARAMETERS, resultCount);
 }
 
 /**
@@ -128,21 +199,21 @@ void ServiceEntry::getParamsFromText(StringList *params, NXCPMessage *response)
 {
    StringList *list = m_responseData.split(_T("\n"));
    UINT32 fieldId = VID_PARAM_LIST_BASE;
+   int resultCount = 0;
    for (int i = 0; i < params->size(); i++)
    {
-      response->setField(fieldId++, params->get(i));
-
+      AgentWriteLog(3, _T("Try to find"));
       const char *eptr;
       int eoffset;
-      PCRE *compiledPattern = _pcre_compile_t(reinterpret_cast<const PCRE_TCHAR*>(params->get(i)), PCRE_COMMON_FLAGS | PCRE_CASELESS, &eptr, &eoffset, NULL);
+      PCRE *compiledPattern = _pcre_compile_t(reinterpret_cast<const PCRE_TCHAR*>(params->get(i)), PCRE_COMMON_FLAGS, &eptr, &eoffset, NULL);
       if (compiledPattern == NULL)
       {
-         response->setField(fieldId++, static_cast<const TCHAR *>(NULL));
          continue;
       }
       TCHAR *matchedString = NULL;
       for (int j = 0; j < list->size(); j++)
       {
+         AgentWriteLog(3, _T("Try to find: %s"), list->get(j));
          int fields[30];
          if (_pcre_exec_t(compiledPattern, NULL, reinterpret_cast<const PCRE_TCHAR*>(list->get(j)), static_cast<int>(wcslen(list->get(j))), 0, 0, fields, 30) >= 0)
          {
@@ -151,12 +222,20 @@ void ServiceEntry::getParamsFromText(StringList *params, NXCPMessage *response)
                matchedString = MemAllocString(fields[3] + 1 - fields[2]);
                memcpy(matchedString, &list->get(j)[fields[2]], (fields[3] - fields[2]) * sizeof(TCHAR));
                matchedString[fields[3] - fields[2]] = 0;
+               AgentWriteLog(3, _T("Try to find: %s"), matchedString);
             }
             break;
          }
       }
-      response->setField(fieldId++, matchedString);
+
+      if (matchedString != NULL)
+      {
+         response->setField(fieldId++, params->get(i));
+         response->setField(fieldId++, matchedString);
+         resultCount++;
+      }
    }
+   response->setField(VID_NUM_PARAMETERS, resultCount);
    delete list;
 }
 
@@ -193,9 +272,9 @@ static size_t OnCurlDataReceived(char *ptr, size_t size, size_t nmemb, void *use
 /**
  * Update casched data
  */
-UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const char *password, long authType, struct curl_slist *headers, bool peerVerify)
+UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const char *password, long authType, struct curl_slist *headers, bool peerVerify, const char *topLevelName)
 {
-   UINT32 rcc;
+   UINT32 rcc = RCC_SUCCESS;
    CURL *curl = curl_easy_init();
    if (curl != NULL)
    {
@@ -214,10 +293,16 @@ UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const ch
       data.setAllocationStep(32768);
       curl_easy_setopt(curl, CURLOPT_WRITEDATA, &data);
 
-      //convert url to char
-      if (curl_easy_setopt(curl, CURLOPT_URL, url) == CURLE_OK)
+#ifdef UNICODE
+      char *urlUtf8 = UTF8StringFromWideString(url);
+#else
+      char *urlUtf8 = UTF8StringFromMBString(url);
+#endif
+      AgentWriteLog(3, _T("Url: %hs"), urlUtf8);
+      if (curl_easy_setopt(curl, CURLOPT_URL, urlUtf8) == CURLE_OK)
       {
-         if (curl_easy_perform(curl) == 0)
+         int resp = curl_easy_perform(curl);
+         if (resp == CURLE_OK)
          {
             if(data.size() > 0)
             {
@@ -235,7 +320,10 @@ UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const ch
                {
                   m_type = TextType::XML;
                   char *content = m_responseData.getUTF8String();
-                  m_xml.loadXmlConfigFromMemory(content, strlen(content), NULL, NULL, false);
+                  AgentWriteLog(3, _T("Top level tag: %hs"), topLevelName);
+                  if (!m_xml.loadXmlConfigFromMemory(content, static_cast<int>(strlen(content)), NULL, "*", false))
+                     AgentWriteLog(3, _T("Failed to load XML"));
+                  AgentWriteLog(3, _T("XML loaded"));
                   MemFree(content);
                }
                else if(m_responseData.startsWith(_T("{")))
@@ -243,17 +331,21 @@ UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const ch
                   m_type = TextType::JSON;
                   char *content = m_responseData.getUTF8String();
                   json_error_t error;
-                  if(m_json != NULL)
+                  if (m_json != NULL)
                   {
                      json_decref(m_json);
                   }
-                  json_t *json = json_loads(content, 0, &error);
+                  m_json = json_loads(content, 0, &error);
                   MemFree(content);
                }
                else
                {
                   m_type = TextType::Text;
                }
+               m_lastRequestTime = time(NULL);
+               AgentWriteLog(3, _T("Type: %d"), m_type);
+               AgentWriteLog(3, _T("Response data: %s"), (const TCHAR *)m_responseData);
+               AgentWriteLog(3, _T("Response data lenght: %d"), m_responseData.length());
             }
             else
             {
@@ -263,7 +355,7 @@ UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const ch
          }
          else
          {
-            AgentWriteLog(3, _T("Get data from service: error making curl request"));
+            AgentWriteLog(3, _T("Get data from service: error making curl request: %d"), resp);
             rcc = RCC_INTERNAL_ERROR; //TODO: fix all errors and debug messages
          }
       }
@@ -272,6 +364,7 @@ UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const ch
          AgentWriteLog(3, _T("Get data from service: curl_easy_setopt with url failed"));
          rcc = RCC_INTERNAL_ERROR;
       }
+      MemFree(urlUtf8);
    }
    else
    {
@@ -283,7 +376,7 @@ UINT32 ServiceEntry::updateData(const TCHAR *url, const char *userName, const ch
    return rcc;
 }
 
-void GetServiceParameters(NXCPMessage *request, NXCPMessage *response)
+void GetWebServiceParameters(NXCPMessage *request, NXCPMessage *response)
 {
    TCHAR *url = request->getFieldAsString(VID_URL);
 
@@ -301,6 +394,11 @@ void GetServiceParameters(NXCPMessage *request, NXCPMessage *response)
    UINT32 result = RCC_SUCCESS;
    if (cashedEntry->isDataExpired(retentionTime))
    {
+      char *topLevelName = request->getFieldAsUtf8String(VID_PARAM_LIST_BASE);
+      char *separator = strchr(topLevelName+1, '/');
+      if(separator != NULL)
+         *separator = 0;
+
       char *login = request->getFieldAsUtf8String(VID_LOGIN_NAME);
       char *password = request->getFieldAsUtf8String(VID_PASSWORD);
       struct curl_slist *headers = NULL;
@@ -311,11 +409,12 @@ void GetServiceParameters(NXCPMessage *request, NXCPMessage *response)
       {
          headers = curl_slist_append(headers, request->getFieldAsUtf8String(fieldId++, header, CURL_MAX_HTTP_HEADER));
       }
-      result = cashedEntry->updateData(url, login, password, request->getFieldAsUInt64(VID_AUTH_TYPE), headers, request->getFieldAsBoolean(VID_VERIFY_CERT));
+      result = cashedEntry->updateData(url, login, password, request->getFieldAsUInt64(VID_AUTH_TYPE), headers, request->getFieldAsBoolean(VID_VERIFY_CERT), topLevelName+1);
 
       curl_slist_free_all(headers);
       MemFree(login);
       MemFree(password);
+      MemFree(topLevelName);
    }
 
    if(result == RCC_SUCCESS)

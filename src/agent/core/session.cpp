@@ -578,8 +578,8 @@ void CommSession::processingThread()
             case CMD_GET_TABLE:
                getTable(request, &response);
                break;
-            case CMD_GET_SERVICE_PARAMS:
-               GetServiceParameters(request, &response);
+            case CMD_GET_WEB_SERVICE_PARAMS:
+               GetWebServiceParameters(request, &response);
                break;
             case CMD_KEEPALIVE:
                response.setField(VID_RCC, ERR_SUCCESS);

@@ -949,7 +949,7 @@ UINT32 AgentConnection::getServiceParameter(const TCHAR *url, UINT32 retentionTi
 
    NXCPMessage msg(m_nProtocolVersion);
    UINT32 dwRqId = generateRequestId();
-   msg.setCode(CMD_GET_SERVICE_PARAMS);
+   msg.setCode(CMD_GET_WEB_SERVICE_PARAMS);
    msg.setId(dwRqId);
    msg.setField(VID_URL, url);
    msg.setField(VID_RETENTION_TIME, retentionTime);
@@ -971,7 +971,7 @@ UINT32 AgentConnection::getServiceParameter(const TCHAR *url, UINT32 retentionTi
          {
             if (response->isFieldExist(VID_NUM_PARAMETERS))
             {
-               results->fillMessage(response, VID_PARAM_LIST_BASE, VID_NUM_PARAMETERS);
+               results->loadMessage(response, VID_NUM_PARAMETERS, VID_PARAM_LIST_BASE);
             }
             else
             {

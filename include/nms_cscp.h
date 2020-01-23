@@ -642,7 +642,7 @@ typedef struct
 #define CMD_REMOVE_MQTT_BROKER            0x018E
 #define CMD_ADD_MQTT_TOPIC                0x018F
 #define CMD_REMOVE_MQTT_TOPIC             0x0190
-#define CMD_GET_SERVICE_PARAMS            0x0191
+#define CMD_GET_WEB_SERVICE_PARAMS        0x0191
 
 #define CMD_RS_LIST_REPORTS            0x1100
 #define CMD_RS_GET_REPORT              0x1101

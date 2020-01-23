@@ -1,7 +1,7 @@
 bin_PROGRAMS = nxagentd
 nxagentd_SOURCES = actions.cpp appagent.cpp comm.cpp config.cpp ctrl.cpp \
                    datacoll.cpp dcsnmp.cpp dbupgrade.cpp epp.cpp event.cpp \
-                   exec.cpp extagent.cpp getparam.cpp getserviceparam.cpp \
+                   exec.cpp extagent.cpp getparam.cpp getwsparam.cpp \
                    localdb.cpp master.cpp nxagentd.cpp policy.cpp proxy.cpp \
                    push.cpp register.cpp sa.cpp session.cpp snmpproxy.cpp \
                    snmptrapproxy.cpp static_subagents.cpp subagent.cpp \

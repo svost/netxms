@@ -1,8 +1,8 @@
-bin_PROGRAMS = nxserviceget
-nxserviceget_SOURCES = nxserviceget.cpp
-nxserviceget_CPPFLAGS = -I@top_srcdir@/include -I@top_srcdir@/src/server/include -I@top_srcdir@/build
-nxserviceget_LDFLAGS = @EXEC_LDFLAGS@
-nxserviceget_LDADD = \
+bin_PROGRAMS = nxwsget
+nxwsget_SOURCES = nxwsget.cpp
+nxwsget_CPPFLAGS = -I@top_srcdir@/include -I@top_srcdir@/src/server/include -I@top_srcdir@/build
+nxwsget_LDFLAGS = @EXEC_LDFLAGS@
+nxwsget_LDADD = \
 	      ../../libnxsrv/libnxsrv.la \
 	      ../../../libnxsl/libnxsl.la \
 	      ../../../snmp/libnxsnmp/libnxsnmp.la \
@@ -11,4 +11,4 @@ nxserviceget_LDADD = \
 
 EXTRA_DIST = \
 	Makefile.w32 \
-	nxserviceget.vcxproj nxserviceget.vcxproj.filters
+	nxwsget.vcxproj nxwsget.vcxproj.filters

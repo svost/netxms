@@ -16,7 +16,7 @@
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **
-** File: nxget.cpp
+** File: nxwsget.cpp
 **
 **/
 
@@ -31,7 +31,7 @@
 #include <netdb.h>
 #endif
 
-NETXMS_EXECUTABLE_HEADER(nxserviceget)
+NETXMS_EXECUTABLE_HEADER(nxwsget)
 
 #define MAX_LINE_SIZE      4096
 #define MAX_CRED_LEN       128
@@ -116,7 +116,7 @@ int main(int argc, char *argv[])
 
    // Parse command line
    opterr = 1;
-   while((ch = getopt(argc, argv, "a:A:cD:e:hH:i:K:LO:p:P:r:R:s:t:vw:W:X:Z:")) != -1)
+   while((ch = getopt(argc, argv, "a:A:cD:e:hH:i:K:L:O:p:P:r:R:s:t:vw:W:X:Z:")) != -1)
    {
       switch(ch)
       {
@@ -218,13 +218,13 @@ int main(int argc, char *argv[])
          case 'L':   // Login
 #ifdef UNICODE
 #if HAVE_MBSTOWCS
-            mbstowcs(login, optarg, MAX_SECRET_LENGTH);
+            mbstowcs(login, optarg, MAX_CRED_LEN);
 #else
-            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, login, MAX_SECRET_LENGTH);
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, login, MAX_CRED_LEN);
 #endif
-            login[MAX_SECRET_LENGTH - 1] = 0;
+            login[MAX_CRED_LEN - 1] = 0;
 #else
-            strlcpy(login, optarg, MAX_SECRET_LENGTH);
+            strlcpy(login, optarg, MAX_CRED_LEN);
 #endif
             break;
          case 'p':   // Agent's port number
@@ -246,13 +246,13 @@ int main(int argc, char *argv[])
          case 'P':   // Password
 #ifdef UNICODE
 #if HAVE_MBSTOWCS
-            mbstowcs(password, optarg, MAX_SECRET_LENGTH);
+            mbstowcs(password, optarg, MAX_CRED_LEN);
 #else
-            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, password, MAX_SECRET_LENGTH);
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, password, MAX_CRED_LEN);
 #endif
-            password[MAX_SECRET_LENGTH - 1] = 0;
+            password[MAX_CRED_LEN - 1] = 0;
 #else
-            strlcpy(password, optarg, MAX_SECRET_LENGTH);
+            strlcpy(password, optarg, MAX_CRED_LEN);
 #endif
             break;
          case 'r':   // Retention time
@@ -282,8 +282,6 @@ int main(int argc, char *argv[])
                authType = CURLAUTH_DIGEST;
             else if (!strcmp(optarg, "digest_IE"))
                authType = CURLAUTH_DIGEST_IE;
-            //else if (!strcmp(optarg, "bearer"))
-            //   authType = CURLAUTH_BEARER;
             else if (!strcmp(optarg, "any"))
                authType = CURLAUTH_ANY;
             else if (!strcmp(optarg, "anysafe"))
@@ -451,11 +449,22 @@ int main(int argc, char *argv[])
                {
                   TCHAR *url;
                   StringList parameters;
+                  iPos = optind + 1;
 #ifdef UNICODE
                   url = WideStringFromMBStringSysLocale(argv[iPos++]);
 #else
                   url = MemCopyStr(argv[iPos++]);
 #endif
+                  while (iPos < argc)
+                  {
+                     TCHAR *param;
+#ifdef UNICODE
+                     param = WideStringFromMBStringSysLocale(argv[iPos++]);
+#else
+                     param = MemCopyStr(argv[iPos++]);
+#endif
+                     parameters.addPreallocated(param);
+                  }
                   iExitCode = GetServiceParameter(conn, url, retentionTime, (login[0] == 0) ? NULL: login, (password[0] == 0) ? NULL: password, authType, &headers, &parameters, verifyCert);
                   ThreadSleep(iInterval);
 
