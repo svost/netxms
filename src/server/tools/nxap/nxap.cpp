@@ -110,7 +110,7 @@ static bool ParseAdditionalOptionCb(const char ch, const char *optarg)
 /**
  * Validate argument count
  */
-static bool ValidateArgCountCb(int currentCount)
+static bool IsArgMissingCb(int currentCount)
 {
    // Check parameter correctness
    if (s_action == -1)
@@ -144,19 +144,19 @@ static int ExecuteCommandCb(AgentConnection *conn, int argc, char *argv[], RSA *
  */
 int main(int argc, char *argv[])
 {
-   NxToolOptions options;
-   options.argc = argc;
-   options.argv = argv;
-   options.mainHelpText = _T("Usage: nxap [<options>] -l <host>\n")
+   ServerCmdToolParameters parameters;
+   parameters.argc = argc;
+   parameters.argv = argv;
+   parameters.mainHelpText = _T("Usage: nxap [<options>] -l <host>\n")
                            _T("   or: nxap [<options>] -u <guid> <host>\n")
                            _T("Tool specific options are:\n")
                            _T("   -l           : List policies.\n")
                            _T("   -u <guid>    : Uninstall policy.\n")
                            _T("\n");
-   options.additionalOptions = "lu:";
-   options.executeCommandCb = &ExecuteCommandCb;
-   options.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
-   options.validateArgCountCb = &ValidateArgCountCb;
+   parameters.additionalOptions = "lu:";
+   parameters.executeCommandCb = &ExecuteCommandCb;
+   parameters.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
+   parameters.isArgMissingCb = &IsArgMissingCb;
 
-   return ParseCmdAndPrepareConnection(&options);
+   return RunServerCmdTool(&parameters);
 }

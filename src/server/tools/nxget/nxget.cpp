@@ -454,7 +454,7 @@ static bool ParseAdditionalOptionCb(const char ch, const char *optarg)
 /**
  * Validates argument count
  */
-static bool ValidateArgCountCb(int currentCount)
+static bool IsArgMissingCb(int currentCount)
 {
    return currentCount < (((s_operation == CMD_CHECK_SERVICE) || (s_operation == CMD_GET_PARAMS) || (s_operation == CMD_GET_CONFIG)) ? 1 : 2);
 }
@@ -535,10 +535,10 @@ static int ExecuteCommandCb(AgentConnection *conn, int argc, char *argv[], RSA *
  */
 int main(int argc, char *argv[])
 {
-   NxToolOptions options;
-   options.argc = argc;
-   options.argv = argv;
-   options.mainHelpText = _T("Usage: nxget [<options>] <host> [<parameter> [<parameter> ...]]\n")
+   ServerCmdToolParameters parameters;
+   parameters.argc = argc;
+   parameters.argv = argv;
+   parameters.mainHelpText = _T("Usage: nxget [<options>] <host> [<parameter> [<parameter> ...]]\n")
                            _T("Tool specific options are:\n")
                            _T("   -b           : Batch mode - get all parameters listed on command line.\n")
                            _T("   -C           : Get agent's configuration file\n")
@@ -557,10 +557,10 @@ int main(int argc, char *argv[])
                            _T("   -t type      : Set type of service to be checked.\n")
                            _T("                  Possible types are: custom, ssh, pop3, smtp, ftp, http, https, telnet.\n")
                            _T("   -T           : Requested parameter is a table.\n");
-   options.additionalOptions = "bCd:EFi:IlnN:o:P:r:R:t:T";
-   options.executeCommandCb = &ExecuteCommandCb;
-   options.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
-   options.validateArgCountCb = &ValidateArgCountCb;
+   parameters.additionalOptions = "bCd:EFi:IlnN:o:P:r:R:t:T";
+   parameters.executeCommandCb = &ExecuteCommandCb;
+   parameters.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
+   parameters.isArgMissingCb = &IsArgMissingCb;
 
-   return ParseCmdAndPrepareConnection(&options);
+   return RunServerCmdTool(&parameters);
 }

@@ -52,12 +52,12 @@ static void DebugWriter(const TCHAR *tag, const TCHAR *format, va_list args)
 }
 
 /**
- * Function parses command line and creates connection
+ * Function initializes process, parses command line and creates connection
  * validateArgCountCb - is called for unknown attributes
  * validateArgCountCb - is called for parameter count validation
  * executeCommandCb - is called to execute command
  */
-int ParseCmdAndPrepareConnection(NxToolOptions *opts)
+int RunServerCmdTool(ServerCmdToolParameters *parameters)
 {
    char *eptr;
    bool start = true, useProxy = false;
@@ -88,11 +88,10 @@ int ParseCmdAndPrepareConnection(NxToolOptions *opts)
 
    // Parse command line
    opterr = 1;
-   char options[215];
-   strcat(options, "a:A:D:e:hK:O:p:s:S:vw:W:X:");
-   strcat(options, opts->additionalOptions);
+   char options[128] = "a:A:D:e:hK:O:p:s:S:vw:W:X:";
+   strlcat(options, parameters->additionalOptions, 128);
 
-   while((ch = getopt(opts->argc, opts->argv, options)) != -1)
+   while((ch = getopt(parameters->argc, parameters->argv, options)) != -1)
    {
       switch(ch)
       {
@@ -125,7 +124,7 @@ int ParseCmdAndPrepareConnection(NxToolOptions *opts)
                      _T("   -W seconds   : Set connection timeout (default is 30 seconds).\n")
                      _T("   -X addr      : Use proxy agent at given address.\n")
                      _T("\n"),
-                     opts->mainHelpText,
+                     parameters->mainHelpText,
 #ifdef _WITH_ENCRYPTION
                      keyFile,
 #endif
@@ -261,7 +260,7 @@ int ParseCmdAndPrepareConnection(NxToolOptions *opts)
             start = false;
             break;
          default:
-            start = opts->parseAdditionalOptionCb(ch, optarg);
+            start = parameters->parseAdditionalOptionCb(ch, optarg);
             break;
       }
    }
@@ -269,7 +268,7 @@ int ParseCmdAndPrepareConnection(NxToolOptions *opts)
    // Check parameter correctness
    if (start)
    {
-      if (opts->validateArgCountCb(opts->argc - optind))
+      if (parameters->isArgMissingCb(parameters->argc - optind))
       {
          printf("Required argument(s) missing.\nUse nxget -h to get complete command line syntax.\n");
          start = false;
@@ -315,11 +314,11 @@ int ParseCmdAndPrepareConnection(NxToolOptions *opts)
          WSADATA wsaData;
          WSAStartup(2, &wsaData);
 #endif
-         InetAddress addr = InetAddress::resolveHostName(opts->argv[optind]);
+         InetAddress addr = InetAddress::resolveHostName(parameters->argv[optind]);
          InetAddress proxyAddr = useProxy ? InetAddress::resolveHostName(szProxy) : InetAddress();
          if (!addr.isValid())
          {
-            fprintf(stderr, "Invalid host name or address \"%s\"\n", opts->argv[optind]);
+            fprintf(stderr, "Invalid host name or address \"%s\"\n", parameters->argv[optind]);
          }
          else if (useProxy && !proxyAddr.isValid())
          {
@@ -337,7 +336,7 @@ int ParseCmdAndPrepareConnection(NxToolOptions *opts)
                conn->setProxy(proxyAddr, proxyPort, proxyAuth, szProxySecret);
             if (conn->connect(pServerKey, &dwError))
             {
-               iExitCode = opts->executeCommandCb(conn, opts->argc, opts->argv, pServerKey);
+               iExitCode = parameters->executeCommandCb(conn, parameters->argc, parameters->argv, pServerKey);
             }
             else
             {

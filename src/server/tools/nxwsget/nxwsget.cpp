@@ -179,7 +179,7 @@ static bool ParseAdditionalOptionCb(const char ch, const char *optarg)
 /**
  * Validate parameter count
  */
-static bool ValidateArgCountCb(int currentCount)
+static bool IsArgMissingCb(int currentCount)
 {
    return currentCount < 3;
 }
@@ -222,10 +222,10 @@ static int ExecuteCommandCb(AgentConnection *conn, int argc, char *argv[], RSA *
  */
 int main(int argc, char *argv[])
 {
-   NxToolOptions options;
-   options.argc = argc;
-   options.argv = argv;
-   options.mainHelpText = _T("Usage: Usage: nxget [<options>] <host> <URL> <parameter> [<parameter> ...]\n")
+   ServerCmdToolParameters parameters;
+   parameters.argc = argc;
+   parameters.argv = argv;
+   parameters.mainHelpText = _T("Usage: Usage: nxget [<options>] <host> <URL> <parameter> [<parameter> ...]\n")
                            _T("Tool specific options are:\n")
                            _T("   -c           : Do not verify service certificate.\n")
                            _T("   -H header    : Service header.\n")
@@ -235,10 +235,10 @@ int main(int argc, char *argv[])
                            _T("   -r seconds   : Casched data retention time.\n")
                            _T("   -t auth      : Service auth type. Valid methods are \"basic\", \"digest_IE\",\n")
                            _T("                  \"digest\", \"bearer\", \"any\", \"anysafe\". Default is \"any\".\n");
-   options.additionalOptions = "cH:i:L:P:r:t:";
-   options.executeCommandCb = &ExecuteCommandCb;
-   options.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
-   options.validateArgCountCb = &ValidateArgCountCb;
+   parameters.additionalOptions = "cH:i:L:P:r:t:";
+   parameters.executeCommandCb = &ExecuteCommandCb;
+   parameters.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
+   parameters.isArgMissingCb = &IsArgMissingCb;
 
-   return ParseCmdAndPrepareConnection(&options);
+   return RunServerCmdTool(&parameters);
 }

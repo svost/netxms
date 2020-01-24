@@ -987,23 +987,23 @@ public:
 
 
 /**
- * Additional information for command line options processing and execution
+ * Additional information for command line parameters processing and execution
  */
-struct NxToolOptions
+struct ServerCmdToolParameters
 {
    char **argv;
    int argc;
    const TCHAR *mainHelpText;
    const char *additionalOptions;
    bool (* parseAdditionalOptionCb) (const char ch, const char *optarg);
-   bool (* validateArgCountCb) (int currentCount);
+   bool (* isArgMissingCb) (int currentCount);
    int (* executeCommandCb) (AgentConnection *conn, int argc, char *argv[], RSA *pServerKey);
 };
 
 //
 // Functions
 //
-int LIBNXSRV_EXPORTABLE ParseCmdAndPrepareConnection(NxToolOptions *opts);
+int LIBNXSRV_EXPORTABLE RunServerCmdTool(ServerCmdToolParameters *opts);
 void LIBNXSRV_EXPORTABLE DestroyRoutingTable(ROUTING_TABLE *pRT);
 void LIBNXSRV_EXPORTABLE SortRoutingTable(ROUTING_TABLE *pRT);
 const TCHAR LIBNXSRV_EXPORTABLE *AgentErrorCodeToText(UINT32 err);

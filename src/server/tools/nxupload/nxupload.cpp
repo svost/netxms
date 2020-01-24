@@ -157,7 +157,7 @@ static bool ParseAdditionalOptionCb(const char ch, const char *optarg)
 /**
  * Validate parametercount
  */
-static bool ValidateArgCountCb(int currentCount)
+static bool IsArgMissingCb(int currentCount)
 {
    return currentCount < 2;
 }
@@ -219,20 +219,20 @@ static int ExecuteCommandCb(AgentConnection *conn, int argc, char *argv[], RSA *
  */
 int main(int argc, char *argv[])
 {
-   NxToolOptions options;
-   options.argc = argc;
-   options.argv = argv;
-   options.mainHelpText = _T("Usage: nxupload [<options>] <host> <file>\n")
+   ServerCmdToolParameters parameters;
+   parameters.argc = argc;
+   parameters.argv = argv;
+   parameters.mainHelpText = _T("Usage: nxupload [<options>] <host> <file>\n")
                            _T("Tool specific options are:\n")
                            _T("   -d <file>    : Fully qualified destination file name\n")
                            _T("   -q           : Quiet mode.\n")
                            _T("   -u           : Start agent upgrade from uploaded package.\n")
                            _T("   -z           : Compress data stream with LZ4.\n")
                            _T("   -Z           : Compress data stream with DEFLATE.\n");
-   options.additionalOptions = "d:quzZ";
-   options.executeCommandCb = &ExecuteCommandCb;
-   options.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
-   options.validateArgCountCb = &ValidateArgCountCb;
+   parameters.additionalOptions = "d:quzZ";
+   parameters.executeCommandCb = &ExecuteCommandCb;
+   parameters.parseAdditionalOptionCb = &ParseAdditionalOptionCb;
+   parameters.isArgMissingCb = &IsArgMissingCb;
 
-   return ParseCmdAndPrepareConnection(&options);
+   return RunServerCmdTool(&parameters);
 }
