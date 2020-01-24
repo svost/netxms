@@ -1,10 +1,10 @@
 /*
-** nxget - command line tool used to retrieve parameters from NetXMS agent
-** Copyright (C) 2004-2018 Victor Kirhenshtein
+** NetXMS - Network Management System
+** Copyright (C) 2003-2013 Raden Solutions
 **
 ** This program is free software; you can redistribute it and/or modify
-** it under the terms of the GNU General Public License as published by
-** the Free Software Foundation; either version 2 of the License, or
+** it under the terms of the GNU Lesser General Public License as published by
+** the Free Software Foundation; either version 3 of the License, or
 ** (at your option) any later version.
 **
 ** This program is distributed in the hope that it will be useful,
@@ -12,29 +12,33 @@
 ** MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
 ** GNU General Public License for more details.
 **
-** You should have received a copy of the GNU General Public License
+** You should have received a copy of the GNU Lesser General Public License
 ** along with this program; if not, write to the Free Software
 ** Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
 **
-** File: nxwsget.cpp
+** File: nxtool.cpp
 **
 **/
 
-#include <nms_common.h>
+#include <arpa/inet.h>
+#include <bits/getopt_core.h>
+#include <config.h>
+#include <netinet/in.h>
+#include <netxms-build-tag.h>
 #include <nms_agent.h>
+#include <nms_common.h>
+#include <nms_threads.h>
 #include <nms_util.h>
+#include <nxcldefs.h>
 #include <nxcpapi.h>
+#include <nxlog.h>
 #include <nxsrvapi.h>
-#include <curl/curl.h>
+#include <openssl/ossl_typ.h>
+#include <unicode.h>
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
 
-#ifndef _WIN32
-#include <netdb.h>
-#endif
-
-NETXMS_EXECUTABLE_HEADER(nxwsget)
-
-#define MAX_LINE_SIZE      4096
-#define MAX_CRED_LEN       128
 
 /**
  * Debug writer
@@ -48,42 +52,15 @@ static void DebugWriter(const TCHAR *tag, const TCHAR *format, va_list args)
 }
 
 /**
- * Callback for printing results
+ * Function parses command line and creates connection
+ * validateArgCountCb - is called for unknown attributes
+ * validateArgCountCb - is called for parameter count validation
+ * executeCommandCb - is called to execute command
  */
-static EnumerationCallbackResult PrintResults(const TCHAR *key, const void *value, void *data)
-{
-   WriteToTerminalEx(_T("%s = %s\n"), key, value);
-   return _CONTINUE;
-}
-
-/**
- * Get service parameter
- */
-static int GetServiceParameter(AgentConnection *pConn, const TCHAR *url, UINT32 retentionTime, const TCHAR *login, const TCHAR *password, long authType, StringList *headers, StringList *parameters, bool verifyCert)
-{
-   TCHAR szBuffer[1024];
-   StringMap results;
-
-   UINT32 dwError = pConn->getServiceParameter(url, retentionTime, login, password, authType, headers, parameters, verifyCert, &results);
-   if (dwError == ERR_SUCCESS)
-   {
-      results.forEach(PrintResults, NULL);
-   }
-   else
-   {
-      WriteToTerminalEx(_T("%d: %s\n"), dwError, AgentErrorCodeToText(dwError));
-   }
-   fflush(stdout);
-   return (dwError == ERR_SUCCESS) ? 0 : 1;
-}
-
-/**
- * Startup
- */
-int main(int argc, char *argv[])
+int ParseCmdAndPrepareConnection(NxToolOptions *opts)
 {
    char *eptr;
-   BOOL start = TRUE, useProxy = FALSE;
+   bool start = true, useProxy = false;
    int i, ch, iPos, iExitCode = 3, iInterval = 0;
    int authMethod = AUTH_NONE, proxyAuth = AUTH_NONE;
 #ifdef _WITH_ENCRYPTION
@@ -93,40 +70,38 @@ int main(int argc, char *argv[])
 #endif
    WORD agentPort = AGENT_LISTEN_PORT, proxyPort = AGENT_LISTEN_PORT;
    UINT32 dwTimeout = 5000, dwConnTimeout = 30000, dwError;
-   TCHAR szSecret[MAX_SECRET_LENGTH] = _T("");
+   TCHAR szSecret[MAX_SECRET_LENGTH] = _T(""), szRequest[MAX_DB_STRING] = _T("");
    TCHAR keyFile[MAX_PATH];
+   TCHAR szResponse[MAX_DB_STRING] = _T("");
    char szProxy[MAX_OBJECT_NAME] = "";
-	TCHAR szProxySecret[MAX_SECRET_LENGTH] = _T("");
+   TCHAR szProxySecret[MAX_SECRET_LENGTH] = _T("");
    RSA *pServerKey = NULL;
-   UINT32 retentionTime = 60;
-   TCHAR login[MAX_CRED_LEN] = _T("");
-   TCHAR password[MAX_CRED_LEN] = _T("");
-   long authType = CURLAUTH_ANY;
-   StringList headers;
-   bool verifyCert = true;
+#ifdef UNICODE
+   WCHAR *wcValue;
+#endif
 
    InitNetXMSProcess(true);
-#ifdef _WIN32
-	SetExceptionHandler(SEHDefaultConsoleHandler, NULL, NULL, _T("nxserviceget"), FALSE, FALSE);
-#endif
-	nxlog_set_debug_writer(DebugWriter);
+   nxlog_set_debug_writer(DebugWriter);
 
    GetNetXMSDirectory(nxDirData, keyFile);
    _tcscat(keyFile, DFILE_KEYS);
 
    // Parse command line
    opterr = 1;
-   while((ch = getopt(argc, argv, "a:A:cD:e:hH:i:K:L:O:p:P:r:R:s:t:vw:W:X:Z:")) != -1)
+   char options[215];
+   strcat(options, "a:A:D:e:hK:O:p:s:S:vw:W:X:");
+   strcat(options, opts->additionalOptions);
+
+   while((ch = getopt(opts->argc, opts->argv, options)) != -1)
    {
       switch(ch)
       {
          case 'h':   // Display help and exit
-            _tprintf(_T("Usage: nxget [<options>] <host> <URL> <parameter> [<parameter> ...]\n")
-                     _T("Valid options are:\n")
+            _tprintf(_T("%s\n")
+                     _T("Default options:\n")
                      _T("   -a auth      : Authentication method. Valid methods are \"none\",\n")
                      _T("                  \"plain\", \"md5\" and \"sha1\". Default is \"none\".\n")
                      _T("   -A auth      : Authentication method for proxy agent.\n")
-                     _T("   -c           : Do not verify service certificate.\n")
                      _T("   -D level     : Set debug level (default is 0).\n")
 #ifdef _WITH_ENCRYPTION
                      _T("   -e policy    : Set encryption policy. Possible values are:\n")
@@ -137,31 +112,25 @@ int main(int argc, char *argv[])
                      _T("                  Default value is 1.\n")
 #endif
                      _T("   -h           : Display help and exit.\n")
-                     _T("   -H header    : Service header.\n")
-                     _T("   -i seconds   : Get specified parameter(s) continuously with given interval.\n")
 #ifdef _WITH_ENCRYPTION
                      _T("   -K file      : Specify server's key file\n")
                      _T("                  (default is %s).\n")
 #endif
-                     _T("   -L login     : Service login name.\n")
                      _T("   -O port      : Proxy agent's port number. Default is %d.\n")
                      _T("   -p port      : Agent's port number. Default is %d.\n")
-                     _T("   -P passwod   : Service passwod.\n")
-                     _T("   -r seconds   : Casched data retention time.\n")
                      _T("   -s secret    : Shared secret for authentication.\n")
-                     _T("   -t auth      : Service auth type. Valid methods are \"basic\", \"digest_IE\",\n")
-                     _T("                  \"digest\", \"bearer\", \"any\", \"anysafe\". Default is \"any\".\n")
+                     _T("   -S secret    : Shared secret for proxy agent authentication.\n")
                      _T("   -v           : Display version and exit.\n")
                      _T("   -w seconds   : Set command timeout (default is 5 seconds).\n")
                      _T("   -W seconds   : Set connection timeout (default is 30 seconds).\n")
                      _T("   -X addr      : Use proxy agent at given address.\n")
-                     _T("   -Z secret    : Shared secret for proxy agent authentication.\n")
                      _T("\n"),
+                     opts->mainHelpText,
 #ifdef _WITH_ENCRYPTION
                      keyFile,
 #endif
                      agentPort, agentPort);
-            start = FALSE;
+            start = false;
             break;
          case 'a':   // Auth method
          case 'A':
@@ -176,56 +145,15 @@ int main(int argc, char *argv[])
             else
             {
                printf("Invalid authentication method \"%s\"\n", optarg);
-               start = FALSE;
+               start = false;
             }
             if (ch == 'a')
                authMethod = i;
             else
                proxyAuth = i;
             break;
-         case 'c':   // debug level
-            verifyCert = false;
-            break;
          case 'D':   // debug level
             nxlog_set_debug_level((int)strtol(optarg, NULL, 0));
-            break;
-         case 'i':   // Interval
-            i = strtol(optarg, &eptr, 0);
-            if ((*eptr != 0) || (i <= 0))
-            {
-               printf("Invalid interval \"%s\"\n", optarg);
-               start = FALSE;
-            }
-            else
-            {
-               iInterval = i;
-            }
-            break;
-         case 'H':   // Password
-            TCHAR header[512];
-#ifdef UNICODE
-#if HAVE_MBSTOWCS
-            mbstowcs(header, optarg, 512);
-#else
-            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, header, 512);
-#endif
-            password[MAX_SECRET_LENGTH - 1] = 0;
-#else
-            strlcpy(header, optarg, 512);
-#endif
-            headers.addPreallocated(header);
-            break;
-         case 'L':   // Login
-#ifdef UNICODE
-#if HAVE_MBSTOWCS
-            mbstowcs(login, optarg, MAX_CRED_LEN);
-#else
-            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, login, MAX_CRED_LEN);
-#endif
-            login[MAX_CRED_LEN - 1] = 0;
-#else
-            strlcpy(login, optarg, MAX_CRED_LEN);
-#endif
             break;
          case 'p':   // Agent's port number
          case 'O':   // Proxy agent's port number
@@ -233,34 +161,14 @@ int main(int argc, char *argv[])
             if ((*eptr != 0) || (i < 0) || (i > 65535))
             {
                printf("Invalid port number \"%s\"\n", optarg);
-               start = FALSE;
+               start = false;
             }
             else
             {
                if (ch == 'p')
                   agentPort = (WORD)i;
-               else if (ch == 'O')
+               else
                   proxyPort = (WORD)i;
-            }
-            break;
-         case 'P':   // Password
-#ifdef UNICODE
-#if HAVE_MBSTOWCS
-            mbstowcs(password, optarg, MAX_CRED_LEN);
-#else
-            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, password, MAX_CRED_LEN);
-#endif
-            password[MAX_CRED_LEN - 1] = 0;
-#else
-            strlcpy(password, optarg, MAX_CRED_LEN);
-#endif
-            break;
-         case 'r':   // Retention time
-            retentionTime = strtol(optarg, &eptr, 0);
-            if ((*eptr != 0) || (i < 0) || (i > 65535))
-            {
-               printf("Invalid retention time \"%s\"\n", optarg);
-               start = FALSE;
             }
             break;
          case 's':   // Shared secret
@@ -268,40 +176,35 @@ int main(int argc, char *argv[])
 #if HAVE_MBSTOWCS
             mbstowcs(szSecret, optarg, MAX_SECRET_LENGTH);
 #else
-	         MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, szSecret, MAX_SECRET_LENGTH);
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, szSecret, MAX_SECRET_LENGTH);
 #endif
-				szSecret[MAX_SECRET_LENGTH - 1] = 0;
+            szSecret[MAX_SECRET_LENGTH - 1] = 0;
 #else
             strlcpy(szSecret, optarg, MAX_SECRET_LENGTH);
 #endif
             break;
-         case 't':
-            if (!strcmp(optarg, "basic"))
-               authType = CURLAUTH_BASIC;
-            else if (!strcmp(optarg, "digest"))
-               authType = CURLAUTH_DIGEST;
-            else if (!strcmp(optarg, "digest_IE"))
-               authType = CURLAUTH_DIGEST_IE;
-            else if (!strcmp(optarg, "any"))
-               authType = CURLAUTH_ANY;
-            else if (!strcmp(optarg, "anysafe"))
-               authType = CURLAUTH_ANYSAFE;
-            else
-            {
-               printf("Invalid authentication method \"%s\"\n", optarg);
-               start = FALSE;
-            }
+         case 'S':   // Shared secret for proxy agent
+#ifdef UNICODE
+#if HAVE_MBSTOWCS
+            mbstowcs(szProxySecret, optarg, MAX_SECRET_LENGTH);
+#else
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, szProxySecret, MAX_SECRET_LENGTH);
+#endif
+            szProxySecret[MAX_SECRET_LENGTH - 1] = 0;
+#else
+            strlcpy(szProxySecret, optarg, MAX_SECRET_LENGTH);
+#endif
             break;
          case 'v':   // Print version and exit
             _tprintf(_T("NetXMS GET command-line utility Version ") NETXMS_VERSION_STRING _T("\n"));
-            start = FALSE;
+            start = false;
             break;
          case 'w':   // Command timeout
             i = strtol(optarg, &eptr, 0);
             if ((*eptr != 0) || (i < 1) || (i > 120))
             {
                _tprintf(_T("Invalid timeout \"%hs\"\n"), optarg);
-               start = FALSE;
+               start = false;
             }
             else
             {
@@ -313,7 +216,7 @@ int main(int argc, char *argv[])
             if ((*eptr != 0) || (i < 1) || (i > 120))
             {
                printf("Invalid timeout \"%s\"\n", optarg);
-               start = FALSE;
+               start = false;
             }
             else
             {
@@ -327,7 +230,7 @@ int main(int argc, char *argv[])
                 (iEncryptionPolicy > 3))
             {
                printf("Invalid encryption policy %d\n", iEncryptionPolicy);
-               start = FALSE;
+               start = false;
             }
             break;
          case 'K':
@@ -335,9 +238,9 @@ int main(int argc, char *argv[])
 #if HAVE_MBSTOWCS
             mbstowcs(keyFile, optarg, MAX_PATH);
 #else
-	         MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, keyFile, MAX_PATH);
+            MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, keyFile, MAX_PATH);
 #endif
-				keyFile[MAX_PATH - 1] = 0;
+            keyFile[MAX_PATH - 1] = 0;
 #else
             strlcpy(keyFile, optarg, MAX_PATH);
 #endif
@@ -346,30 +249,19 @@ int main(int argc, char *argv[])
          case 'e':
          case 'K':
             printf("ERROR: This tool was compiled without encryption support\n");
-            start = FALSE;
+            start = false;
             break;
 #endif
          case 'X':   // Use proxy
             strncpy(szProxy, optarg, MAX_OBJECT_NAME);
-				szProxy[MAX_OBJECT_NAME - 1] = 0;
-            useProxy = TRUE;
-            break;
-         case 'Z':   // Shared secret for proxy agent
-#ifdef UNICODE
-#if HAVE_MBSTOWCS
-            mbstowcs(szProxySecret, optarg, MAX_SECRET_LENGTH);
-#else
-	         MultiByteToWideChar(CP_ACP, MB_PRECOMPOSED, optarg, -1, szProxySecret, MAX_SECRET_LENGTH);
-#endif
-				szProxySecret[MAX_SECRET_LENGTH - 1] = 0;
-#else
-            strlcpy(szProxySecret, optarg, MAX_SECRET_LENGTH);
-#endif
+            szProxy[MAX_OBJECT_NAME - 1] = 0;
+            useProxy = true;
             break;
          case '?':
-            start = FALSE;
+            start = false;
             break;
          default:
+            start = opts->parseAdditionalOptionCb(ch, optarg);
             break;
       }
    }
@@ -377,15 +269,15 @@ int main(int argc, char *argv[])
    // Check parameter correctness
    if (start)
    {
-      if (argc - optind < 3)
+      if (opts->validateArgCountCb(opts->argc - optind))
       {
          printf("Required argument(s) missing.\nUse nxget -h to get complete command line syntax.\n");
-         start = FALSE;
+         start = false;
       }
       else if ((authMethod != AUTH_NONE) && (szSecret[0] == 0))
       {
          printf("Shared secret not specified or empty\n");
-         start = FALSE;
+         start = false;
       }
 
       // Load server key if requested
@@ -402,7 +294,7 @@ int main(int argc, char *argv[])
                {
                   _tprintf(_T("Cannot load server RSA key from \"%s\" or generate new key\n"), keyFile);
                   if (iEncryptionPolicy == ENCRYPTION_REQUIRED)
-                     start = FALSE;
+                     start = false;
                }
             }
          }
@@ -410,7 +302,7 @@ int main(int argc, char *argv[])
          {
             printf("Error initializing cryptography module\n");
             if (iEncryptionPolicy == ENCRYPTION_REQUIRED)
-               start = FALSE;
+               start = false;
          }
       }
 #endif
@@ -423,11 +315,11 @@ int main(int argc, char *argv[])
          WSADATA wsaData;
          WSAStartup(2, &wsaData);
 #endif
-         InetAddress addr = InetAddress::resolveHostName(argv[optind]);
+         InetAddress addr = InetAddress::resolveHostName(opts->argv[optind]);
          InetAddress proxyAddr = useProxy ? InetAddress::resolveHostName(szProxy) : InetAddress();
          if (!addr.isValid())
          {
-            fprintf(stderr, "Invalid host name or address \"%s\"\n", argv[optind]);
+            fprintf(stderr, "Invalid host name or address \"%s\"\n", opts->argv[optind]);
          }
          else if (useProxy && !proxyAddr.isValid())
          {
@@ -445,32 +337,7 @@ int main(int argc, char *argv[])
                conn->setProxy(proxyAddr, proxyPort, proxyAuth, szProxySecret);
             if (conn->connect(pServerKey, &dwError))
             {
-               do
-               {
-                  TCHAR *url;
-                  StringList parameters;
-                  iPos = optind + 1;
-#ifdef UNICODE
-                  url = WideStringFromMBStringSysLocale(argv[iPos++]);
-#else
-                  url = MemCopyStr(argv[iPos++]);
-#endif
-                  while (iPos < argc)
-                  {
-                     TCHAR *param;
-#ifdef UNICODE
-                     param = WideStringFromMBStringSysLocale(argv[iPos++]);
-#else
-                     param = MemCopyStr(argv[iPos++]);
-#endif
-                     parameters.addPreallocated(param);
-                  }
-                  iExitCode = GetServiceParameter(conn, url, retentionTime, (login[0] == 0) ? NULL: login, (password[0] == 0) ? NULL: password, authType, &headers, &parameters, verifyCert);
-                  ThreadSleep(iInterval);
-
-                  MemFree(url);
-               }
-               while(iInterval > 0);
+               iExitCode = opts->executeCommandCb(conn, opts->argc, opts->argv, pServerKey);
             }
             else
             {
